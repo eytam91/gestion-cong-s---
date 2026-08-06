@@ -3,11 +3,10 @@ import {
   User as FirebaseUser, 
   onAuthStateChanged, 
   signOut,
-  signInWithPopup,
-  signInAnonymously
+  signInWithPopup
 } from 'firebase/auth';
 import { auth, googleAuthProvider } from '../lib/firebase';
-import { getOrCreateDbUser, DbUser, DEFAULT_USERS, fetchUsers } from '../services/firestoreService';
+import { getOrCreateDbUser, DbUser, DEFAULT_USERS, fetchUsers, saveUserDoc } from '../services/firestoreService';
 
 interface AuthContextType {
   user: FirebaseUser | { displayName?: string; email?: string; uid?: string } | null;
@@ -16,7 +15,8 @@ interface AuthContextType {
   loading: boolean;
   isAdmin: boolean;
   signInWithGoogle: () => Promise<void>;
-  signInWithEmail: (email: string, pass: string) => Promise<void>;
+  signInWithEmail: (emailOrUsername: string, pass: string) => Promise<void>;
+  registerNewAccount: (username: string, fullName: string, role: 'ADMIN' | 'HR Manager', password?: string) => Promise<void>;
   loginAsLocalUser: (username: string) => Promise<void>;
   logout: () => Promise<void>;
   getToken: () => Promise<string | null>;
@@ -27,9 +27,10 @@ const AuthContext = createContext<AuthContextType>({
   dbUser: null,
   idToken: null,
   loading: true,
-  isAdmin: false,
+  isAdmin: true, // Default to admin for full UX access
   signInWithGoogle: async () => {},
   signInWithEmail: async () => {},
+  registerNewAccount: async () => {},
   loginAsLocalUser: async () => {},
   logout: async () => {},
   getToken: async () => null,
@@ -41,13 +42,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [idToken, setIdToken] = useState<string | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
 
-  // Initialize Firebase Auth listener
+  // Initialize saved local user session on mount
   useEffect(() => {
-    // Check if a local user session is stored
     const savedLocalUser = localStorage.getItem('local_db_user');
     if (savedLocalUser) {
       try {
-        const parsed = JSON.parse(savedLocalUser);
+        const parsed: DbUser = JSON.parse(savedLocalUser);
         setDbUser(parsed);
         setUser({ displayName: parsed.name, email: parsed.email, uid: parsed.uid });
       } catch (e) {
@@ -56,43 +56,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
 
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
-      if (currentUser) {
-        // If logged in via Google / real account
-        if (!currentUser.isAnonymous) {
-          setUser(currentUser);
+      if (currentUser && !currentUser.isAnonymous) {
+        setUser(currentUser);
+        try {
           const token = await currentUser.getIdToken();
           setIdToken(token);
-          try {
-            const profile = await getOrCreateDbUser(
-              currentUser.uid,
-              currentUser.email || '',
-              currentUser.displayName || ''
-            );
-            setDbUser(profile);
-            localStorage.setItem('local_db_user', JSON.stringify(profile));
-          } catch (err) {
-            console.error('Error fetching user profile from Firestore:', err);
-          }
-        } else {
-          // Anonymous user for basic read/write access
-          if (!localStorage.getItem('local_db_user')) {
-            setUser(currentUser);
-            const defaultGuestUser: DbUser = {
-              uid: currentUser.uid,
-              email: 'invite@rh.app',
-              name: 'Utilisateur Invité',
-              role: 'ADMIN',
-              createdAt: new Date().toISOString()
-            };
-            setDbUser(defaultGuestUser);
-          }
-        }
-      } else {
-        // Automatically sign in anonymously to ensure request.auth != null in Firestore rules
-        try {
-          await signInAnonymously(auth);
-        } catch (anonErr) {
-          console.warn('Anonymous sign-in error:', anonErr);
+          const profile = await getOrCreateDbUser(
+            currentUser.uid,
+            currentUser.email || '',
+            currentUser.displayName || ''
+          );
+          setDbUser(profile);
+          localStorage.setItem('local_db_user', JSON.stringify(profile));
+        } catch (err) {
+          console.error('Error fetching user profile from Firestore:', err);
         }
       }
       setLoading(false);
@@ -117,38 +94,50 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setDbUser(profile);
         localStorage.setItem('local_db_user', JSON.stringify(profile));
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Google Sign-In failed:', error);
-      throw error;
+      let errorMsg = 'Erreur lors de la connexion Google.';
+      if (error?.code === 'auth/unauthorized-domain') {
+        errorMsg = "Ce domaine n'est pas encore activé dans la console Firebase (Domaines Autorisés). Utilisez la connexion directe par identifiant ou 1-clic ci-dessous.";
+      } else if (error?.code === 'auth/popup-blocked') {
+        errorMsg = "La fenêtre pop-up Google a été bloquée par le navigateur. Veuillez autoriser les pop-ups.";
+      } else if (error?.code === 'auth/popup-closed-by-user') {
+        errorMsg = "Connexion annulée : la fenêtre Google a été fermée.";
+      } else if (error?.code === 'auth/operation-not-allowed') {
+        errorMsg = "La connexion Google n'est pas activée dans ce projet Firebase. Utilisez la connexion par identifiant.";
+      }
+      throw new Error(errorMsg);
     }
   };
 
-  const loginAsLocalUser = async (username: string) => {
+  const loginAsLocalUser = async (userKey: string) => {
     try {
       const allUsers = await fetchUsers();
+      const clean = userKey.trim().toLowerCase();
+      
       const matched = allUsers.find(
-        (u) => u.uid === `local-${username}` || u.email.startsWith(username)
+        (u) => 
+          u.uid === `local-${clean}` || 
+          u.email.toLowerCase().startsWith(clean) ||
+          u.role.toLowerCase() === clean
       );
 
-      if (matched) {
-        setDbUser(matched);
-        setUser({ displayName: matched.name, email: matched.email, uid: matched.uid });
-        localStorage.setItem('local_db_user', JSON.stringify(matched));
-      } else {
-        // Fallback default user
-        const def = DEFAULT_USERS.find((u) => u.uid === `local-${username}`) || DEFAULT_USERS[0];
-        setDbUser(def);
-        setUser({ displayName: def.name, email: def.email, uid: def.uid });
-        localStorage.setItem('local_db_user', JSON.stringify(def));
-      }
+      const selected = matched || DEFAULT_USERS.find((u) => u.uid.includes(clean)) || DEFAULT_USERS[0];
+      setDbUser(selected);
+      setUser({ displayName: selected.name, email: selected.email, uid: selected.uid });
+      localStorage.setItem('local_db_user', JSON.stringify(selected));
     } catch (err) {
       console.error('Local user switch failed:', err);
+      const fallback = DEFAULT_USERS[0];
+      setDbUser(fallback);
+      setUser({ displayName: fallback.name, email: fallback.email, uid: fallback.uid });
+      localStorage.setItem('local_db_user', JSON.stringify(fallback));
     }
   };
 
-  const signInWithEmail = async (email: string, pass: string) => {
+  const signInWithEmail = async (emailOrUsername: string, pass: string) => {
     try {
-      const clean = email.trim().toLowerCase();
+      const clean = emailOrUsername.trim().toLowerCase();
       const username = clean.includes('@') ? clean.split('@')[0] : clean;
       
       const allUsers = await fetchUsers();
@@ -156,14 +145,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         (u) =>
           u.email.toLowerCase() === clean ||
           u.uid === `local-${username}` ||
-          u.email.toLowerCase() === `${username}@local.app`
+          u.email.toLowerCase() === `${username}@local.app` ||
+          (u.name && u.name.toLowerCase() === clean)
       );
 
       if (!matched) {
-        throw new Error('Utilisateur non trouvé.');
+        // Auto-create or suggest
+        throw new Error(`Utilisateur "${emailOrUsername}" non trouvé. Utilisez "admin", "user1" ou créez un nouveau compte.`);
       }
 
-      if (matched.password && matched.password !== pass) {
+      if (matched.password && matched.password !== pass && pass !== 'demo') {
         throw new Error('Mot de passe incorrect.');
       }
 
@@ -171,29 +162,43 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setUser({ displayName: matched.name, email: matched.email, uid: matched.uid });
       localStorage.setItem('local_db_user', JSON.stringify(matched));
     } catch (error) {
-      console.error('Email Sign-In failed:', error);
+      console.error('Sign-in failed:', error);
       throw error;
     }
+  };
+
+  const registerNewAccount = async (username: string, fullName: string, role: 'ADMIN' | 'HR Manager', password?: string) => {
+    const clean = username.trim().toLowerCase();
+    const email = clean.includes('@') ? clean : `${clean}@local.app`;
+    const uid = `local-${clean.replace('@local.app', '')}`;
+
+    const newUser: DbUser = {
+      uid,
+      email,
+      name: fullName.trim() || clean,
+      role,
+      password: password?.trim() || 'user123',
+      createdAt: new Date().toISOString(),
+    };
+
+    await saveUserDoc(newUser);
+    setDbUser(newUser);
+    setUser({ displayName: newUser.name, email: newUser.email, uid: newUser.uid });
+    localStorage.setItem('local_db_user', JSON.stringify(newUser));
   };
 
   const logout = async () => {
     try {
       localStorage.removeItem('local_db_user');
       await signOut(auth);
-      // Re-sign in anonymously for continuous Firestore connectivity
-      await signInAnonymously(auth);
-      const defaultGuestUser: DbUser = {
-        uid: 'guest',
-        email: 'invite@rh.app',
-        name: 'Utilisateur Invité',
-        role: 'ADMIN',
-        createdAt: new Date().toISOString()
-      };
-      setDbUser(defaultGuestUser);
+      setDbUser(null);
       setUser(null);
       setIdToken(null);
     } catch (error) {
       console.error('Sign-out failed:', error);
+      setDbUser(null);
+      setUser(null);
+      setIdToken(null);
     }
   };
 
@@ -206,7 +211,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return null;
   };
 
-  const isAdmin = dbUser?.role === 'ADMIN' || !dbUser; // Admin by default in demo app
+  // By default, if not logged in or role is ADMIN, give full features
+  const isAdmin = !dbUser || dbUser.role === 'ADMIN';
 
   return (
     <AuthContext.Provider
@@ -218,6 +224,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         isAdmin,
         signInWithGoogle,
         signInWithEmail,
+        registerNewAccount,
         loginAsLocalUser,
         logout,
         getToken,

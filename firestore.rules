@@ -2,21 +2,8 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     
-    // Global Helper Functions
-    function isSignedIn() {
-      return request.auth != null;
-    }
-    
     function isValidId(id) {
       return id is string && id.size() > 0 && id.size() <= 128;
-    }
-    
-    function incoming() {
-      return request.resource.data;
-    }
-    
-    function existing() {
-      return resource.data;
     }
 
     // Default Deny Catch-All
@@ -24,34 +11,32 @@ service cloud.firestore {
       allow read, write: if false;
     }
     
-    // Users Collection
+    // Users Collection (Admin / HR accounts)
     match /users/{userId} {
-      allow read: if isSignedIn();
-      allow create, update: if isSignedIn() && isValidId(userId);
-      allow delete: if isSignedIn();
+      allow read: if true;
+      allow create, update: if isValidId(userId);
+      allow delete: if true;
     }
     
     // Employees Collection
     match /employees/{employeeId} {
-      allow read: if isSignedIn();
-      allow create: if isSignedIn() && isValidId(employeeId);
-      allow update: if isSignedIn() && isValidId(employeeId);
-      allow delete: if isSignedIn();
+      allow read: if true;
+      allow create, update: if isValidId(employeeId);
+      allow delete: if true;
     }
     
     // Leave Records Collection
     match /leave_records/{leaveId} {
-      allow read: if isSignedIn();
-      allow create: if isSignedIn() && isValidId(leaveId);
-      allow update: if isSignedIn() && isValidId(leaveId);
-      allow delete: if isSignedIn();
+      allow read: if true;
+      allow create, update: if isValidId(leaveId);
+      allow delete: if true;
     }
     
     // Audit Logs Collection
     match /audit_logs/{logId} {
-      allow read: if isSignedIn();
-      allow create: if isSignedIn() && isValidId(logId);
-      allow update, delete: if isSignedIn();
+      allow read: if true;
+      allow create, update: if isValidId(logId);
+      allow delete: if true;
     }
   }
 }
