@@ -12,10 +12,10 @@ import {
   Filter, 
   CheckCircle2, 
   Clock, 
-  Database,
-  FileCode,
-  UserCheck,
-  Server
+  Database, 
+  FileCode, 
+  UserCheck, 
+  Server 
 } from 'lucide-react';
 import { ActivityLog, DeviceSession } from '../types';
 import { getActivityLogs, getDeviceSessions, clearAuditLogs, getOrCreateDeviceId } from '../utils/auditLogger';
@@ -95,10 +95,10 @@ export const AuditLogsManager: React.FC<AuditLogsManagerProps> = ({
         <div>
           <div className="flex items-center gap-2">
             <ShieldCheck className="w-6 h-6 text-emerald-600" />
-            <h2 className="text-xl font-bold text-stone-900">Registre d'Audit & Base Cloud SQL</h2>
+            <h2 className="text-xl font-bold text-stone-900">Registre d'Audit & Base Cloud Firestore</h2>
           </div>
           <p className="text-xs text-stone-500 mt-1">
-            Traçabilité des actions RH, synchronisation multi-appareils en temps réel avec Cloud SQL PostgreSQL (europe-west1).
+            Traçabilité des actions RH, synchronisation multi-appareils en temps réel avec Cloud Firestore.
           </p>
         </div>
 
@@ -148,7 +148,7 @@ export const AuditLogsManager: React.FC<AuditLogsManagerProps> = ({
           }`}
         >
           <Database className="w-4 h-4 text-amber-400" />
-          Base de Données PostgreSQL
+          Base de Données Firestore
         </button>
       </div>
 
@@ -305,7 +305,7 @@ export const AuditLogsManager: React.FC<AuditLogsManagerProps> = ({
           <div className="bg-white rounded-2xl border border-stone-200 p-6 shadow-xs space-y-4">
             <div className="flex items-center gap-2 text-stone-900 font-bold text-base">
               <Server className="w-5 h-5 text-amber-500" />
-              État de la Base PostgreSQL Cloud SQL
+              État de la Base Cloud Firestore
             </div>
 
             <div className="grid grid-cols-2 gap-3 text-center">
@@ -338,15 +338,16 @@ export const AuditLogsManager: React.FC<AuditLogsManagerProps> = ({
           <div className="bg-white rounded-2xl border border-stone-200 p-6 shadow-xs space-y-4">
             <div className="flex items-center gap-2 text-stone-900 font-bold text-base">
               <UserCheck className="w-5 h-5 text-emerald-600" />
-              Schéma PostgreSQL Actif
+              Collections Firestore Actives
             </div>
 
             <div className="text-xs text-stone-600 space-y-2 bg-stone-50 p-3.5 rounded-xl border border-stone-200 font-mono text-[11px]">
-              <p className="font-bold text-stone-800 font-sans">Tables & Colonnes:</p>
+              <p className="font-bold text-stone-800 font-sans">Collections & Documents:</p>
               <ul className="space-y-1 text-stone-600 list-disc list-inside">
-                <li><strong className="text-stone-900">employees:</strong> id, id_number, name, position, status ('LOCAL' | 'EXPAT'), hire_date, contract_type ('TYPE_A' | 'TYPE_B')</li>
-                <li><strong className="text-stone-900">leave_records:</strong> id, employee_id, start_date, end_date, days_count, leave_type, is_paid, notes</li>
-                <li><strong className="text-stone-900">audit_logs:</strong> id, action, action_label, details, device_id, device_type, timestamp</li>
+                <li><strong className="text-stone-900">employees:</strong> id, idNumber, name, position, status ('LOCAL' | 'EXPAT'), hireDate, contractType ('TYPE_A' | 'TYPE_B')</li>
+                <li><strong className="text-stone-900">leave_records:</strong> id, employeeId, startDate, endDate, daysCount, leaveType, isPaid, notes</li>
+                <li><strong className="text-stone-900">users:</strong> uid, email, name, role ('ADMIN' | 'HR Manager'), password</li>
+                <li><strong className="text-stone-900">audit_logs:</strong> id, action, actionLabel, details, deviceId, deviceType, timestamp</li>
               </ul>
             </div>
           </div>

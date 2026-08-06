@@ -24,12 +24,23 @@ import { UserManager } from './components/UserManager';
 import { AuthModal } from './components/AuthModal';
 import { registerDeviceConnection, addActivityLog } from './utils/auditLogger';
 import { useAuth } from './context/AuthContext';
+import { 
+  initializeFirestoreData, 
+  fetchEmployees, 
+  saveEmployee, 
+  batchSaveEmployees, 
+  updateEmployeeDoc, 
+  deleteEmployeeDoc, 
+  fetchLeaveRecords, 
+  saveLeaveRecord, 
+  deleteLeaveRecordDoc, 
+  resetDemoDataToFirestore, 
+  clearAllFirestoreData 
+} from './services/firestoreService';
 
 export default function App() {
-  const { user, dbUser, signInWithGoogle, logout, idToken } = useAuth();
+  const { user, dbUser, logout, isAdmin } = useAuth();
   const [activeTab, setActiveTab] = useState<'dashboard' | 'employees' | 'ledger' | 'audit' | 'users'>('dashboard');
-  
-  const isAdmin = dbUser?.role === 'ADMIN';
   
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [leaveRecords, setLeaveRecords] = useState<LeaveRecord[]>([]);
@@ -46,26 +57,16 @@ export default function App() {
     registerDeviceConnection();
   }, []);
 
-  // Fetch initial data from Cloud SQL API
-  const fetchData = async () => {
+  // Fetch initial data from Firestore
+  const loadData = async () => {
     setIsLoading(true);
     try {
-      const [empRes, leaveRes] = await Promise.all([
-        fetch('/api/employees'),
-        fetch('/api/leave-records')
-      ]);
-
-      if (empRes.ok && leaveRes.ok) {
-        const empData = await empRes.json();
-        const leaveData = await leaveRes.json();
-        setEmployees(empData);
-        setLeaveRecords(leaveData);
-        setDbConnected(true);
-      } else {
-        setDbConnected(false);
-      }
+      const { employees: initialEmps, leaveRecords: initialLeaves } = await initializeFirestoreData();
+      setEmployees(initialEmps);
+      setLeaveRecords(initialLeaves);
+      setDbConnected(true);
     } catch (err) {
-      console.error('Failed to fetch data from Cloud SQL:', err);
+      console.error('Failed to load data from Firestore:', err);
       setDbConnected(false);
     } finally {
       setIsLoading(false);
@@ -73,53 +74,48 @@ export default function App() {
   };
 
   useEffect(() => {
-    fetchData();
+    loadData();
   }, []);
 
-  const getAuthHeaders = (): Record<string, string> => {
-    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-    if (idToken) {
-      headers['Authorization'] = `Bearer ${idToken}`;
-    }
-    return headers;
-  };
-
   const handleResetDemoData = async () => {
-    if (window.confirm('Recharger le jeu de données démo exemple (Employé X inclus) dans Cloud SQL ?')) {
+    if (window.confirm('Recharger le jeu de données démo exemple (Employé X inclus) dans Cloud Firestore ?')) {
+      setIsLoading(true);
       try {
-        await fetch('/api/reset-demo', {
-          method: 'POST',
-          headers: getAuthHeaders(),
-        });
-        await fetchData();
+        await resetDemoDataToFirestore();
+        const [emps, leaves] = await Promise.all([fetchEmployees(), fetchLeaveRecords()]);
+        setEmployees(emps);
+        setLeaveRecords(leaves);
 
         addActivityLog({
           action: 'DATA_RESET',
-          actionLabel: 'Rechargement Démo Cloud SQL',
-          details: 'Rechargement du jeu de données démo en base de données PostgreSQL.',
+          actionLabel: 'Rechargement Démo',
+          details: 'Rechargement du jeu de données démo en base de données Cloud Firestore.',
         });
       } catch (err) {
         console.error('Reset failed:', err);
+      } finally {
+        setIsLoading(false);
       }
     }
   };
 
   const handleClearAllData = async () => {
-    if (window.confirm('ATTENTION: Vider complètement tous les employés et congés dans la base PostgreSQL ?')) {
+    if (window.confirm('ATTENTION: Vider complètement tous les employés et congés dans Cloud Firestore ?')) {
+      setIsLoading(true);
       try {
-        await fetch('/api/clear-data', {
-          method: 'POST',
-          headers: getAuthHeaders(),
-        });
-        await fetchData();
+        await clearAllFirestoreData();
+        setEmployees([]);
+        setLeaveRecords([]);
 
         addActivityLog({
           action: 'DATA_CLEARED',
-          actionLabel: 'Nettoyage Cloud SQL',
-          details: 'Suppression de tous les enregistrements dans la base de données PostgreSQL.',
+          actionLabel: 'Nettoyage Base',
+          details: 'Suppression de tous les enregistrements dans Cloud Firestore.',
         });
       } catch (err) {
         console.error('Clear failed:', err);
+      } finally {
+        setIsLoading(false);
       }
     }
   };
@@ -127,27 +123,18 @@ export default function App() {
   // Handlers for Employee
   const handleBatchImportEmployees = async (importedEmployees: Employee[]) => {
     try {
-      const res = await fetch('/api/employees/batch', {
-        method: 'POST',
-        headers: getAuthHeaders(),
-        body: JSON.stringify(importedEmployees),
-      });
-      if (res.ok) {
-        const result = await res.json();
-        await fetchData();
+      await batchSaveEmployees(importedEmployees);
+      const emps = await fetchEmployees();
+      setEmployees(emps);
 
-        addActivityLog({
-          action: 'EMPLOYEE_CREATED',
-          actionLabel: 'Import Multiple Employés',
-          details: `Import CSV: ${result.insertedCount} employés ajoutés, ${result.updatedCount} mis à jour dans Cloud SQL.`,
-        });
-      } else {
-        const err = await res.json();
-        alert(`Erreur lors de l'import : ${err.error}`);
-      }
+      addActivityLog({
+        action: 'EMPLOYEES_IMPORTED',
+        actionLabel: 'Import Multiple Employés',
+        details: `Import CSV: ${importedEmployees.length} employés synchronisés dans Cloud Firestore.`,
+      });
     } catch (err) {
       console.error('Failed to batch import employees:', err);
-      alert("Erreur lors de l'import CSV");
+      alert("Erreur lors de l'import CSV dans Firestore");
     }
   };
 
@@ -159,22 +146,15 @@ export default function App() {
     };
 
     try {
-      const res = await fetch('/api/employees', {
-        method: 'POST',
-        headers: getAuthHeaders(),
-        body: JSON.stringify(newEmp),
-      });
-      if (res.ok) {
-        const saved = await res.json();
-        setEmployees((prev) => [saved, ...prev]);
+      const saved = await saveEmployee(newEmp);
+      setEmployees((prev) => [saved, ...prev]);
 
-        addActivityLog({
-          action: 'EMPLOYEE_CREATED',
-          actionLabel: 'Création Employé',
-          details: `Ajout de l'employé ${saved.name} (${saved.contractType}) dans Cloud SQL`,
-          targetId: saved.id,
-        });
-      }
+      addActivityLog({
+        action: 'EMPLOYEE_CREATED',
+        actionLabel: 'Création Employé',
+        details: `Ajout de l'employé ${saved.name} (${saved.contractType}) dans Cloud Firestore`,
+        targetId: saved.id,
+      });
     } catch (err) {
       console.error('Failed to add employee:', err);
     }
@@ -182,22 +162,15 @@ export default function App() {
 
   const handleUpdateEmployee = async (updatedEmp: Employee) => {
     try {
-      const res = await fetch(`/api/employees/${updatedEmp.id}`, {
-        method: 'PATCH',
-        headers: getAuthHeaders(),
-        body: JSON.stringify(updatedEmp),
-      });
-      if (res.ok) {
-        const saved = await res.json();
-        setEmployees((prev) => prev.map((emp) => (emp.id === saved.id ? saved : emp)));
+      const saved = await updateEmployeeDoc(updatedEmp);
+      setEmployees((prev) => prev.map((emp) => (emp.id === saved.id ? saved : emp)));
 
-        addActivityLog({
-          action: 'EMPLOYEE_UPDATED',
-          actionLabel: 'Modification Employé',
-          details: `Mise à jour de ${saved.name} dans Cloud SQL`,
-          targetId: saved.id,
-        });
-      }
+      addActivityLog({
+        action: 'EMPLOYEE_UPDATED',
+        actionLabel: 'Modification Employé',
+        details: `Mise à jour de ${saved.name} dans Cloud Firestore`,
+        targetId: saved.id,
+      });
     } catch (err) {
       console.error('Failed to update employee:', err);
     }
@@ -205,23 +178,18 @@ export default function App() {
 
   const handleDeleteEmployee = async (id: string) => {
     const empToDelete = employees.find((e) => e.id === id);
-    if (window.confirm(`Confirmer la suppression définitive de ${empToDelete?.name || 'cet employé'} dans la base Cloud SQL ?`)) {
+    if (window.confirm(`Confirmer la suppression définitive de ${empToDelete?.name || 'cet employé'} dans Cloud Firestore ?`)) {
       try {
-        const res = await fetch(`/api/employees/${id}`, {
-          method: 'DELETE',
-          headers: getAuthHeaders(),
-        });
-        if (res.ok) {
-          setEmployees((prev) => prev.filter((emp) => emp.id !== id));
-          setLeaveRecords((prev) => prev.filter((r) => r.employeeId !== id));
+        await deleteEmployeeDoc(id);
+        setEmployees((prev) => prev.filter((emp) => emp.id !== id));
+        setLeaveRecords((prev) => prev.filter((r) => r.employeeId !== id));
 
-          addActivityLog({
-            action: 'EMPLOYEE_DELETED',
-            actionLabel: 'Suppression Employé',
-            details: `Suppression de l'employé ${empToDelete?.name || id} dans Cloud SQL.`,
-            targetId: id,
-          });
-        }
+        addActivityLog({
+          action: 'EMPLOYEE_DELETED',
+          actionLabel: 'Suppression Employé',
+          details: `Suppression de l'employé ${empToDelete?.name || id} dans Cloud Firestore.`,
+          targetId: id,
+        });
       } catch (err) {
         console.error('Failed to delete employee:', err);
       }
@@ -237,23 +205,16 @@ export default function App() {
     };
 
     try {
-      const res = await fetch('/api/leave-records', {
-        method: 'POST',
-        headers: getAuthHeaders(),
-        body: JSON.stringify(newRecord),
-      });
-      if (res.ok) {
-        const saved = await res.json();
-        setLeaveRecords((prev) => [saved, ...prev]);
+      const saved = await saveLeaveRecord(newRecord);
+      setLeaveRecords((prev) => [saved, ...prev]);
 
-        const targetEmp = employees.find((e) => e.id === recordData.employeeId);
-        addActivityLog({
-          action: 'LEAVE_ADDED',
-          actionLabel: 'Saisie de Congé',
-          details: `Enregistrement de ${saved.daysCount}j pour ${targetEmp?.name || recordData.employeeId} (${saved.startDate} -> ${saved.endDate}) dans Cloud SQL`,
-          targetId: saved.id,
-        });
-      }
+      const targetEmp = employees.find((e) => e.id === recordData.employeeId);
+      addActivityLog({
+        action: 'LEAVE_ADDED',
+        actionLabel: 'Saisie de Congé',
+        details: `Enregistrement de ${saved.daysCount}j pour ${targetEmp?.name || recordData.employeeId} (${saved.startDate} -> ${saved.endDate}) dans Cloud Firestore`,
+        targetId: saved.id,
+      });
     } catch (err) {
       console.error('Failed to add leave record:', err);
     }
@@ -262,20 +223,15 @@ export default function App() {
   const handleDeleteLeaveRecord = async (id: string) => {
     const recToDelete = leaveRecords.find((r) => r.id === id);
     try {
-      const res = await fetch(`/api/leave-records/${id}`, {
-        method: 'DELETE',
-        headers: getAuthHeaders(),
-      });
-      if (res.ok) {
-        setLeaveRecords((prev) => prev.filter((r) => r.id !== id));
+      await deleteLeaveRecordDoc(id);
+      setLeaveRecords((prev) => prev.filter((r) => r.id !== id));
 
-        addActivityLog({
-          action: 'LEAVE_DELETED',
-          actionLabel: 'Annulation Congé',
-          details: `Annulation du congé ID ${id} (${recToDelete?.daysCount || 0} jours) dans Cloud SQL.`,
-          targetId: id,
-        });
-      }
+      addActivityLog({
+        action: 'LEAVE_DELETED',
+        actionLabel: 'Annulation Congé',
+        details: `Annulation du congé ID ${id} (${recToDelete?.daysCount || 0} jours) dans Cloud Firestore.`,
+        targetId: id,
+      });
     } catch (err) {
       console.error('Failed to delete leave record:', err);
     }
@@ -304,11 +260,11 @@ export default function App() {
               <div className="flex items-center gap-2 mt-0.5">
                 <span className="inline-flex items-center gap-1 text-2xs bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded font-mono font-bold border border-indigo-200">
                   <Database className="w-3 h-3 text-indigo-600" />
-                  Cloud SQL (PostgreSQL)
+                  Cloud Firestore
                 </span>
                 <span className="hidden md:inline-flex items-center gap-1 text-2xs bg-emerald-50 text-emerald-800 px-2 py-0.5 rounded font-mono">
                   <Globe className="w-3 h-3 text-emerald-600" />
-                  Multi-Appareils Connectés
+                  Multi-Appareils Synchronisés
                 </span>
               </div>
             </div>
@@ -317,8 +273,8 @@ export default function App() {
           <div className="flex items-center gap-2 sm:gap-3">
             {/* Refresh Button */}
             <button
-              onClick={fetchData}
-              title="Rafraîchir les données Cloud SQL"
+              onClick={loadData}
+              title="Rafraîchir les données Cloud Firestore"
               className="p-2 text-stone-500 hover:text-stone-900 hover:bg-stone-100 rounded-xl transition-all cursor-pointer"
             >
               <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin text-amber-600' : ''}`} />
@@ -344,7 +300,7 @@ export default function App() {
                   <p className="text-2xs font-bold text-stone-900 leading-tight truncate max-w-[120px]">
                     {user.displayName || user.email}
                   </p>
-                  <p className="text-[10px] text-emerald-600 font-semibold">Connecté</p>
+                  <p className="text-[10px] text-emerald-600 font-semibold">Connecté ({dbUser?.role || 'Utilisateur'})</p>
                 </div>
                 <button
                   onClick={logout}
@@ -445,12 +401,12 @@ export default function App() {
           <div className="flex items-center gap-2">
             <Database className="w-4 h-4 text-indigo-300 animate-pulse" />
             <span>
-              <strong>Base PostgreSQL Cloud SQL Active:</strong> Toutes les données (Employés, Registre des Congés, Audit) sont centralisées et synchronisées entre tous vos appareils connectés.
+              <strong>Base Cloud Firestore Active:</strong> Toutes les données (Employés, Registre des Congés, Audit) sont centralisées et synchronisées entre tous vos appareils connectés.
             </span>
           </div>
           <div className="flex items-center gap-3">
             <span className="bg-indigo-800/80 px-2 py-0.5 rounded text-[11px] border border-indigo-700/60 font-mono">
-              Base: PostgreSQL
+              Base: Cloud Firestore
             </span>
             <span className="bg-emerald-500/20 text-emerald-200 px-2 py-0.5 rounded text-[11px] border border-emerald-500/40 font-mono">
               ● Connecté
@@ -464,7 +420,7 @@ export default function App() {
         {isLoading ? (
           <div className="flex flex-col items-center justify-center py-16 gap-3 text-stone-500">
             <RefreshCw className="w-8 h-8 animate-spin text-amber-600" />
-            <p className="text-sm font-medium">Chargement des données depuis PostgreSQL Cloud SQL...</p>
+            <p className="text-sm font-medium">Chargement des données depuis Cloud Firestore...</p>
           </div>
         ) : (
           <>
@@ -533,9 +489,9 @@ export default function App() {
         <div className="max-w-7xl mx-auto flex flex-col sm:flex-row justify-between items-center gap-2">
           <div className="flex items-center gap-2">
             <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-            <span>Gestion RH, Calculateur de Solde & Base Cloud SQL Centralisée</span>
+            <span>Gestion RH, Calculateur de Solde & Base Cloud Firestore Centralisée</span>
           </div>
-          <span className="font-mono text-stone-400">Google AI Studio • PostgreSQL Cloud SQL</span>
+          <span className="font-mono text-stone-400">Google AI Studio • Cloud Firestore</span>
         </div>
       </footer>
     </div>

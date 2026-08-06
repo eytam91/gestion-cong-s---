@@ -1,150 +1,195 @@
-import { db } from './index.ts';
-import { employees, leaveRecords, auditLogs } from './schema.ts';
-import { eq, desc } from 'drizzle-orm';
+import { adminFirestore } from '../lib/firebase-admin.ts';
 import type { Employee, LeaveRecord, ActivityLog } from '../types.ts';
 import { SAMPLE_DEMO_EMPLOYEES, SAMPLE_DEMO_LEAVE_RECORDS } from '../utils/vacationCalc.ts';
 
 export async function seedIfEmpty() {
-  // Do not auto-seed fake demo data in production so the database stays completely clean
+  // Production Firestore initialization
 }
 
 export async function getAllEmployees(): Promise<Employee[]> {
   try {
-    const rows = await db.select().from(employees);
-    return rows as Employee[];
+    const snapshot = await adminFirestore.collection('employees').get();
+    const list: Employee[] = [];
+    snapshot.forEach((doc) => {
+      list.push(doc.data() as Employee);
+    });
+    // Sort by name or creation date
+    list.sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
+    return list;
   } catch (error) {
-    console.error('Database query failed (getAllEmployees):', error);
-    throw new Error('Database query failed', { cause: error });
+    console.error('Firestore query failed (getAllEmployees):', error);
+    throw new Error('Firestore query failed', { cause: error });
   }
 }
 
 export async function createEmployee(data: Employee): Promise<Employee> {
   try {
-    const [inserted] = await db.insert(employees).values(data).returning();
-    return inserted as Employee;
+    const employeeData: Employee = {
+      ...data,
+      id: data.id || `emp-${Date.now()}`,
+      createdAt: data.createdAt || new Date().toISOString(),
+    };
+    await adminFirestore.collection('employees').doc(employeeData.id).set(employeeData);
+    return employeeData;
   } catch (error) {
-    console.error('Database insert failed (createEmployee):', error);
-    throw new Error('Database insert failed', { cause: error });
+    console.error('Firestore insert failed (createEmployee):', error);
+    throw new Error('Firestore insert failed', { cause: error });
   }
 }
 
 export async function createEmployeesBatch(dataList: Employee[]): Promise<Employee[]> {
   try {
     if (dataList.length === 0) return [];
+    const batch = adminFirestore.batch();
     const insertedRows: Employee[] = [];
+
     for (const item of dataList) {
-      const [inserted] = await db.insert(employees).values(item).onConflictDoUpdate({
-        target: employees.id,
-        set: {
-          idNumber: item.idNumber,
-          name: item.name,
-          position: item.position,
-          status: item.status,
-          hireDate: item.hireDate,
-          contractType: item.contractType,
-        }
-      }).returning();
-      insertedRows.push(inserted as Employee);
+      const emp: Employee = {
+        ...item,
+        id: item.id || `emp-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+        createdAt: item.createdAt || new Date().toISOString(),
+      };
+      const docRef = adminFirestore.collection('employees').doc(emp.id);
+      batch.set(docRef, emp, { merge: true });
+      insertedRows.push(emp);
     }
+
+    await batch.commit();
     return insertedRows;
   } catch (error) {
-    console.error('Database batch insert failed (createEmployeesBatch):', error);
-    throw new Error('Database batch insert failed', { cause: error });
+    console.error('Firestore batch insert failed (createEmployeesBatch):', error);
+    throw new Error('Firestore batch insert failed', { cause: error });
   }
 }
 
 export async function updateEmployee(id: string, data: Partial<Employee>): Promise<Employee> {
   try {
-    const [updated] = await db
-      .update(employees)
-      .set(data)
-      .where(eq(employees.id, id))
-      .returning();
-    return updated as Employee;
+    const docRef = adminFirestore.collection('employees').doc(id);
+    await docRef.set(data, { merge: true });
+    const doc = await docRef.get();
+    return doc.data() as Employee;
   } catch (error) {
-    console.error('Database update failed (updateEmployee):', error);
-    throw new Error('Database update failed', { cause: error });
+    console.error('Firestore update failed (updateEmployee):', error);
+    throw new Error('Firestore update failed', { cause: error });
   }
 }
 
 export async function deleteEmployee(id: string): Promise<void> {
   try {
-    await db.delete(employees).where(eq(employees.id, id));
+    await adminFirestore.collection('employees').doc(id).delete();
   } catch (error) {
-    console.error('Database delete failed (deleteEmployee):', error);
-    throw new Error('Database delete failed', { cause: error });
+    console.error('Firestore delete failed (deleteEmployee):', error);
+    throw new Error('Firestore delete failed', { cause: error });
   }
 }
 
 export async function getAllLeaveRecords(): Promise<LeaveRecord[]> {
   try {
-    const rows = await db.select().from(leaveRecords);
-    return rows as LeaveRecord[];
+    const snapshot = await adminFirestore.collection('leave_records').get();
+    const list: LeaveRecord[] = [];
+    snapshot.forEach((doc) => {
+      list.push(doc.data() as LeaveRecord);
+    });
+    list.sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
+    return list;
   } catch (error) {
-    console.error('Database query failed (getAllLeaveRecords):', error);
-    throw new Error('Database query failed', { cause: error });
+    console.error('Firestore query failed (getAllLeaveRecords):', error);
+    throw new Error('Firestore query failed', { cause: error });
   }
 }
 
 export async function createLeaveRecord(data: LeaveRecord): Promise<LeaveRecord> {
   try {
-    const [inserted] = await db.insert(leaveRecords).values(data).returning();
-    return inserted as LeaveRecord;
+    const leaveData: LeaveRecord = {
+      ...data,
+      id: data.id || `leave-${Date.now()}`,
+      createdAt: data.createdAt || new Date().toISOString(),
+    };
+    await adminFirestore.collection('leave_records').doc(leaveData.id).set(leaveData);
+    return leaveData;
   } catch (error) {
-    console.error('Database insert failed (createLeaveRecord):', error);
-    throw new Error('Database insert failed', { cause: error });
+    console.error('Firestore insert failed (createLeaveRecord):', error);
+    throw new Error('Firestore insert failed', { cause: error });
   }
 }
 
 export async function deleteLeaveRecord(id: string): Promise<void> {
   try {
-    await db.delete(leaveRecords).where(eq(leaveRecords.id, id));
+    await adminFirestore.collection('leave_records').doc(id).delete();
   } catch (error) {
-    console.error('Database delete failed (deleteLeaveRecord):', error);
-    throw new Error('Database delete failed', { cause: error });
+    console.error('Firestore delete failed (deleteLeaveRecord):', error);
+    throw new Error('Firestore delete failed', { cause: error });
   }
 }
 
 export async function getAllAuditLogs(): Promise<ActivityLog[]> {
   try {
-    const rows = await db.select().from(auditLogs).orderBy(desc(auditLogs.timestamp));
-    return rows as ActivityLog[];
+    const snapshot = await adminFirestore.collection('audit_logs').limit(500).get();
+    const list: ActivityLog[] = [];
+    snapshot.forEach((doc) => {
+      list.push(doc.data() as ActivityLog);
+    });
+    list.sort((a, b) => (b.timestamp || '').localeCompare(a.timestamp || ''));
+    return list;
   } catch (error) {
-    console.error('Database query failed (getAllAuditLogs):', error);
-    throw new Error('Database query failed', { cause: error });
+    console.error('Firestore query failed (getAllAuditLogs):', error);
+    throw new Error('Firestore query failed', { cause: error });
   }
 }
 
 export async function createAuditLog(data: ActivityLog): Promise<ActivityLog> {
   try {
-    const [inserted] = await db.insert(auditLogs).values(data).returning();
-    return inserted as ActivityLog;
+    const logData: ActivityLog = {
+      ...data,
+      id: data.id || `log-${Date.now()}`,
+      timestamp: data.timestamp || new Date().toISOString(),
+    };
+    await adminFirestore.collection('audit_logs').doc(logData.id).set(logData);
+    return logData;
   } catch (error) {
-    console.error('Database insert failed (createAuditLog):', error);
-    throw new Error('Database insert failed', { cause: error });
+    console.error('Firestore insert failed (createAuditLog):', error);
+    throw new Error('Firestore insert failed', { cause: error });
   }
 }
 
 export async function resetDemoDataInDb() {
   try {
-    await db.delete(leaveRecords);
-    await db.delete(employees);
+    const batch = adminFirestore.batch();
+
+    // Clear existing
+    const leavesSnap = await adminFirestore.collection('leave_records').get();
+    leavesSnap.forEach((doc) => batch.delete(doc.ref));
+
+    const empsSnap = await adminFirestore.collection('employees').get();
+    empsSnap.forEach((doc) => batch.delete(doc.ref));
+
+    // Add demo data
     for (const emp of SAMPLE_DEMO_EMPLOYEES) {
-      await db.insert(employees).values(emp);
+      const ref = adminFirestore.collection('employees').doc(emp.id);
+      batch.set(ref, emp);
     }
     for (const rec of SAMPLE_DEMO_LEAVE_RECORDS) {
-      await db.insert(leaveRecords).values(rec);
+      const ref = adminFirestore.collection('leave_records').doc(rec.id);
+      batch.set(ref, rec);
     }
+
+    await batch.commit();
   } catch (error) {
-    console.error('Failed to reset demo data in Cloud SQL:', error);
+    console.error('Failed to reset demo data in Firestore:', error);
   }
 }
 
 export async function clearAllDataInDb() {
   try {
-    await db.delete(leaveRecords);
-    await db.delete(employees);
+    const batch = adminFirestore.batch();
+    const leavesSnap = await adminFirestore.collection('leave_records').get();
+    leavesSnap.forEach((doc) => batch.delete(doc.ref));
+
+    const empsSnap = await adminFirestore.collection('employees').get();
+    empsSnap.forEach((doc) => batch.delete(doc.ref));
+
+    await batch.commit();
   } catch (error) {
-    console.error('Failed to clear data in Cloud SQL:', error);
+    console.error('Failed to clear data in Firestore:', error);
   }
 }

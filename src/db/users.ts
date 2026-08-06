@@ -1,22 +1,37 @@
-import { db } from './index.ts';
-import { users } from './schema.ts';
+import { adminFirestore } from '../lib/firebase-admin.ts';
 
-export async function getOrCreateUser(uid: string, email: string, name?: string) {
-  const result = await db.insert(users)
-    .values({
+export interface DbUser {
+  uid: string;
+  email: string;
+  name: string;
+  role: 'ADMIN' | 'HR Manager';
+  password?: string;
+  createdAt: string;
+}
+
+export async function getOrCreateUser(uid: string, email: string, name?: string): Promise<DbUser> {
+  const userRef = adminFirestore.collection('users').doc(uid);
+  const doc = await userRef.get();
+
+  if (!doc.exists) {
+    const newUser: DbUser = {
       uid,
       email,
-      name: name || email.split('@')[0],
+      name: name || email.split('@')[0] || 'Utilisateur',
       role: 'HR Manager',
-    })
-    .onConflictDoUpdate({
-      target: users.uid,
-      set: {
-        email,
-        name: name || email.split('@')[0],
-      },
-    })
-    .returning();
+      createdAt: new Date().toISOString(),
+    };
+    await userRef.set(newUser);
+    return newUser;
+  }
 
-  return result[0];
+  const existingData = doc.data() as DbUser;
+  const updatedData: DbUser = {
+    ...existingData,
+    email: email || existingData.email,
+    name: name || existingData.name || email.split('@')[0],
+  };
+
+  await userRef.set(updatedData, { merge: true });
+  return updatedData;
 }
