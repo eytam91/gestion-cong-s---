@@ -1,0 +1,8 @@
+{
+  "name": "Remix Gestion des Congés \u0026 Absences last last ",
+  "description": "Système RH de suivi des soldes de congés, soldes négatifs, récupération de jours, dépassements et régularisation des absences.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

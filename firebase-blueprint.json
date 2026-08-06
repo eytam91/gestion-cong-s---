@@ -1,0 +1,84 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "User profile and role metadata",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "description": "Unique user ID" },
+        "email": { "type": "string", "format": "email", "description": "User email address" },
+        "name": { "type": "string", "description": "User full name" },
+        "role": { "type": "string", "description": "User role: ADMIN, HR Manager, etc." },
+        "createdAt": { "type": "string", "description": "Creation ISO timestamp" }
+      },
+      "required": ["uid", "email"]
+    },
+    "Employee": {
+      "title": "Employee",
+      "description": "Employee master record for leave tracking",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Employee ID" },
+        "idNumber": { "type": "string", "description": "Matricule or ID Number" },
+        "name": { "type": "string", "description": "Employee full name" },
+        "position": { "type": "string", "description": "Job title or position" },
+        "status": { "type": "string", "description": "Status (LOCAL, EXPATS, etc.)" },
+        "hireDate": { "type": "string", "description": "Date of hire" },
+        "contractType": { "type": "string", "description": "Contract type" },
+        "createdAt": { "type": "string", "description": "Record creation date" }
+      },
+      "required": ["id", "name", "hireDate", "contractType", "createdAt"]
+    },
+    "LeaveRecord": {
+      "title": "LeaveRecord",
+      "description": "Leave, absence, or recovery transaction",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Leave entry ID" },
+        "employeeId": { "type": "string", "description": "Referenced employee ID" },
+        "startDate": { "type": "string", "description": "Start date" },
+        "endDate": { "type": "string", "description": "End date" },
+        "daysCount": { "type": "number", "description": "Number of days" },
+        "leaveType": { "type": "string", "description": "Type of leave" },
+        "isPaid": { "type": "boolean", "description": "Whether leave is paid" },
+        "notes": { "type": "string", "description": "Additional notes" },
+        "createdAt": { "type": "string", "description": "Record creation date" }
+      },
+      "required": ["id", "employeeId", "startDate", "endDate", "daysCount", "leaveType", "createdAt"]
+    },
+    "AuditLog": {
+      "title": "AuditLog",
+      "description": "Audit trail log entry",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Log ID" },
+        "timestamp": { "type": "string", "description": "Event timestamp" },
+        "action": { "type": "string", "description": "Action key" },
+        "actionLabel": { "type": "string", "description": "Human-readable label" },
+        "details": { "type": "string", "description": "Action details" },
+        "targetId": { "type": "string", "description": "Target resource ID" },
+        "deviceId": { "type": "string", "description": "Device identification" },
+        "deviceType": { "type": "string", "description": "Device platform" }
+      },
+      "required": ["id", "timestamp", "action", "actionLabel", "details", "deviceId", "deviceType"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "User profiles and role configurations"
+    },
+    "/employees/{employeeId}": {
+      "schema": "Employee",
+      "description": "Employee database"
+    },
+    "/leave_records/{leaveId}": {
+      "schema": "LeaveRecord",
+      "description": "Leave records and ledger transactions"
+    },
+    "/audit_logs/{logId}": {
+      "schema": "AuditLog",
+      "description": "System and security audit logs"
+    }
+  }
+}
