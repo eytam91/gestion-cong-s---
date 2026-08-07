@@ -34,38 +34,23 @@ export const DEFAULT_USERS: DbUser[] = [
 ];
 
 /**
- * Ensures initial collections and default demo data exist in Firestore.
+ * Ensures initial collections and auth users exist in Firestore, keeping employee database clean.
  */
 export async function initializeFirestoreData(): Promise<{ employees: Employee[]; leaveRecords: LeaveRecord[] }> {
   try {
-    const empSnap = await getDocs(collection(db, EMPLOYEES_COLL));
-    
-    if (empSnap.empty) {
-      console.log('Seeding initial demo employees, leave records and users to Firestore...');
+    // Seed default authentication users if missing
+    const userSnap = await getDocs(collection(db, USERS_COLL));
+    if (userSnap.empty) {
+      console.log('Seeding default auth user accounts in Firestore...');
       const batch = writeBatch(db);
-
-      // Seed employees
-      for (const emp of SAMPLE_DEMO_EMPLOYEES) {
-        const empRef = doc(db, EMPLOYEES_COLL, emp.id);
-        batch.set(empRef, emp);
-      }
-
-      // Seed leave records
-      for (const rec of SAMPLE_DEMO_LEAVE_RECORDS) {
-        const recRef = doc(db, LEAVE_RECORDS_COLL, rec.id);
-        batch.set(recRef, rec);
-      }
-
-      // Seed default users
       for (const u of DEFAULT_USERS) {
         const userRef = doc(db, USERS_COLL, u.uid);
         batch.set(userRef, u);
       }
-
-      await batch.commit();
-      return { employees: SAMPLE_DEMO_EMPLOYEES, leaveRecords: SAMPLE_DEMO_LEAVE_RECORDS };
+      await batch.commit().catch((e) => console.warn('User seeding failed:', e));
     }
 
+    const empSnap = await getDocs(collection(db, EMPLOYEES_COLL));
     const employees: Employee[] = [];
     empSnap.forEach((d) => {
       employees.push(d.data() as Employee);
@@ -83,7 +68,7 @@ export async function initializeFirestoreData(): Promise<{ employees: Employee[]
     };
   } catch (error) {
     console.error('Failed to initialize or fetch Firestore data:', error);
-    return { employees: SAMPLE_DEMO_EMPLOYEES, leaveRecords: SAMPLE_DEMO_LEAVE_RECORDS };
+    return { employees: [], leaveRecords: [] };
   }
 }
 
@@ -97,7 +82,7 @@ export async function fetchEmployees(): Promise<Employee[]> {
     return list.sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
   } catch (err) {
     console.error('Error fetching employees from Firestore:', err);
-    return SAMPLE_DEMO_EMPLOYEES;
+    return [];
   }
 }
 
@@ -159,7 +144,7 @@ export async function fetchLeaveRecords(): Promise<LeaveRecord[]> {
     return list.sort((a, b) => (b.startDate || '').localeCompare(a.startDate || ''));
   } catch (err) {
     console.error('Error fetching leave records from Firestore:', err);
-    return SAMPLE_DEMO_LEAVE_RECORDS;
+    return [];
   }
 }
 

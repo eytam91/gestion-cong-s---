@@ -57,13 +57,23 @@ export default function App() {
     registerDeviceConnection();
   }, []);
 
-  // Fetch initial data from Firestore
+  // Fetch initial data from Firestore, ensuring a fresh database
   const loadData = async () => {
     setIsLoading(true);
     try {
       const { employees: initialEmps, leaveRecords: initialLeaves } = await initializeFirestoreData();
-      setEmployees(initialEmps);
-      setLeaveRecords(initialLeaves);
+      
+      // If legacy demo records (e.g. emp-x, MAT-0001, etc.) were saved previously, automatically purge them
+      const hasOldDemo = initialEmps.some((e) => e.id === 'emp-x' || e.id === 'emp-101' || e.idNumber === 'MAT-0001');
+      if (hasOldDemo) {
+        console.log('Purging previous demo employees to ensure fresh database...');
+        await clearAllFirestoreData();
+        setEmployees([]);
+        setLeaveRecords([]);
+      } else {
+        setEmployees(initialEmps);
+        setLeaveRecords(initialLeaves);
+      }
       setDbConnected(true);
     } catch (err) {
       console.error('Failed to load data from Firestore:', err);

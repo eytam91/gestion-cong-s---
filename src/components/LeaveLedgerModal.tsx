@@ -235,24 +235,31 @@ export const LeaveLedgerModal: React.FC<LeaveLedgerModalProps> = ({
                 </label>
                 {isEmployeeValid && <CheckCircle2 className="w-3 h-3 text-emerald-600" />}
               </div>
-              <select
-                value={employeeId}
-                onChange={(e) => {
-                  setEmployeeId(e.target.value);
-                  if (errors.employeeId) {
-                    setErrors(prev => { const n = { ...prev }; delete n.employeeId; return n; });
-                  }
-                }}
-                className={`w-full px-3.5 py-2.5 rounded-xl border bg-stone-50 text-stone-900 text-xs sm:text-sm focus:bg-white focus:outline-none focus:ring-2 focus:ring-stone-900/10 font-semibold transition-all ${
-                  errors.employeeId ? 'border-red-500 ring-2 ring-red-200 bg-red-50/30' : 'border-stone-200'
-                }`}
-              >
-                {employees.map((emp) => (
-                  <option key={emp.id} value={emp.id}>
-                    [{emp.idNumber || 'SANS-MAT'}] {emp.name} — {emp.position || 'Collaborateur'} ({emp.status === 'EXPAT' ? 'Expatrié' : 'Personnel Local'} • {emp.contractType === 'TYPE_A' ? 'Type A 6m' : 'Type B 12m'})
-                  </option>
-                ))}
-              </select>
+              {employees.length === 0 ? (
+                <div className="p-3 bg-amber-50 rounded-xl border border-amber-200 text-xs text-amber-900">
+                  Aucun employé enregistré. Veuillez d'abord ajouter un employé ou importer des collaborateurs dans l'onglet Effectif avant d'enregistrer une absence.
+                </div>
+              ) : (
+                <select
+                  value={employeeId}
+                  onChange={(e) => {
+                    setEmployeeId(e.target.value);
+                    if (errors.employeeId) {
+                      setErrors(prev => { const n = { ...prev }; delete n.employeeId; return n; });
+                    }
+                  }}
+                  className={`w-full px-3.5 py-2.5 rounded-xl border bg-stone-50 text-stone-900 text-xs sm:text-sm focus:bg-white focus:outline-none focus:ring-2 focus:ring-stone-900/10 font-semibold transition-all ${
+                    errors.employeeId ? 'border-red-500 ring-2 ring-red-200 bg-red-50/30' : 'border-stone-200'
+                  }`}
+                >
+                  <option value="" disabled>-- Sélectionner un employé --</option>
+                  {employees.map((emp) => (
+                    <option key={emp.id} value={emp.id}>
+                      [{emp.idNumber || 'SANS-MAT'}] {emp.name} — {emp.position || 'Collaborateur'} ({emp.status === 'EXPAT' ? 'Expatrié' : 'Personnel Local'} • {emp.contractType === 'TYPE_A' ? 'Type A 6m' : 'Type B 12m'})
+                    </option>
+                  ))}
+                </select>
+              )}
               {errors.employeeId && <p className="text-2xs text-red-600 font-medium mt-1">{errors.employeeId}</p>}
             </div>
 
