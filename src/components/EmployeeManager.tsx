@@ -30,6 +30,7 @@ import { Employee, ContractType, EmployeeStatus, LeaveRecord } from '../types';
 import { calculateEmployeeStats, LEAVE_TYPE_LABELS } from '../utils/vacationCalc';
 import { EmployeeImportModal } from './EmployeeImportModal';
 import { ConfirmModal } from './ConfirmModal';
+import { exportEmployeesToExcel } from '../utils/excelImportExport';
 
 interface EmployeeManagerProps {
   employees: Employee[];
@@ -228,6 +229,18 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({
     setEditingEmployee(null);
   };
 
+  const handleExportEmployeesExcel = () => {
+    if (employees.length === 0) {
+      alert("Aucun employé à exporter.");
+      return;
+    }
+    try {
+      exportEmployeesToExcel(employees, leaveRecords);
+    } catch (err: any) {
+      alert("Erreur lors de l'export Excel : " + (err.message || 'Erreur inconnue'));
+    }
+  };
+
   const handleExportEmployeesCsv = () => {
     if (employees.length === 0) {
       alert("Aucun employé à exporter.");
@@ -323,11 +336,21 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({
           </p>
         </div>
 
-        <div className="flex items-center gap-2.5 flex-wrap">
+        <div className="flex items-center gap-2 flex-wrap">
+          <button
+            type="button"
+            onClick={handleExportEmployeesExcel}
+            className="inline-flex items-center gap-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-950 text-xs font-bold px-3 py-2.5 rounded-xl border border-emerald-300 shadow-2xs transition-all cursor-pointer active:scale-98"
+            title="Exporter l'ensemble de l'effectif avec soldes et calculs au format Excel (.xlsx)"
+          >
+            <FileSpreadsheet className="w-4 h-4 text-emerald-700" />
+            <span>Exporter Excel (.xlsx)</span>
+          </button>
+
           <button
             type="button"
             onClick={handleExportEmployeesCsv}
-            className="inline-flex items-center gap-1.5 bg-white hover:bg-stone-50 text-stone-800 text-xs font-bold px-3.5 py-2.5 rounded-xl border border-stone-200 shadow-2xs transition-all cursor-pointer active:scale-98"
+            className="inline-flex items-center gap-1.5 bg-white hover:bg-stone-50 text-stone-800 text-xs font-bold px-3 py-2.5 rounded-xl border border-stone-200 shadow-2xs transition-all cursor-pointer active:scale-98"
           >
             <Download className="w-4 h-4 text-stone-600" />
             <span>Exporter CSV</span>
@@ -336,18 +359,18 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({
           <button
             type="button"
             onClick={() => setIsImportModalOpen(true)}
-            className="inline-flex items-center gap-1.5 bg-amber-50 hover:bg-amber-100 text-amber-950 text-xs font-bold px-3.5 py-2.5 rounded-xl border border-amber-300 shadow-2xs transition-all cursor-pointer active:scale-98"
+            className="inline-flex items-center gap-1.5 bg-stone-900 hover:bg-stone-800 text-white text-xs font-bold px-3.5 py-2.5 rounded-xl shadow-xs transition-all cursor-pointer active:scale-98"
           >
-            <FileSpreadsheet className="w-4 h-4 text-amber-700" />
+            <FileSpreadsheet className="w-4 h-4 text-emerald-400" />
             <span>Importer Excel / CSV</span>
           </button>
 
           <button
             id="btn-add-employee-modal"
             onClick={handleOpenAddForm}
-            className="inline-flex items-center justify-center gap-2 bg-stone-900 hover:bg-stone-800 text-white text-xs font-bold px-4 py-2.5 rounded-xl transition-all shadow-xs cursor-pointer active:scale-98"
+            className="inline-flex items-center justify-center gap-2 bg-amber-500 hover:bg-amber-600 text-stone-950 text-xs font-bold px-4 py-2.5 rounded-xl transition-all shadow-xs cursor-pointer active:scale-98"
           >
-            <UserPlus className="w-4 h-4 text-amber-400" />
+            <UserPlus className="w-4 h-4" />
             <span>Ajouter un Employé</span>
           </button>
         </div>

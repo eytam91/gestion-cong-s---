@@ -10,8 +10,10 @@ import {
   Globe,
   Building2,
   Filter,
-  Clock
+  Clock,
+  FileSpreadsheet
 } from 'lucide-react';
+import * as XLSX from 'xlsx';
 import { Employee, EmployeeStatus, LeaveRecord, LeaveType } from '../types';
 import { LEAVE_TYPE_LABELS, LEAVE_TYPE_COLORS } from '../utils/vacationCalc';
 import { ConfirmModal } from './ConfirmModal';
@@ -57,6 +59,68 @@ export const LedgerHistory: React.FC<LedgerHistoryProps> = ({
   const sortedRecords = [...filteredRecords].sort(
     (a, b) => new Date(b.startDate).getTime() - new Date(a.startDate).getTime()
   );
+
+  const handleExportExcel = () => {
+    if (sortedRecords.length === 0) {
+      alert("Aucun enregistrement de congé à exporter dans la liste filtrée.");
+      return;
+    }
+
+    const headers = [
+      'N° Matricule',
+      'Nom & Prénom',
+      'Poste / Fonction',
+      'Statut Contractuel',
+      'Cycle de Congés',
+      'Type de Congé',
+      'Date Début',
+      'Date Fin',
+      'Nombre de Jours',
+      'Rémunération',
+      'Remarques / Justificatifs'
+    ];
+
+    const rows = sortedRecords.map((rec) => {
+      const emp = employeeMap.get(rec.employeeId);
+      const leaveLabel = LEAVE_TYPE_LABELS[rec.leaveType] || rec.leaveType;
+      const statusLabel = emp?.status === 'EXPAT' ? 'Expatrié (EXPAT)' : 'Personnel Local (LOCAL)';
+      const contractLabel = emp?.contractType === 'TYPE_A' ? 'Type A (30j/6m)' : emp?.contractType === 'TYPE_B' ? 'Type B (30j/1an)' : 'Inconnu';
+      const remunLabel = rec.isPaid !== false ? 'Payé (Rémunéré)' : 'Sans Solde (Non payé)';
+
+      return [
+        emp?.idNumber || 'SANS-MAT',
+        emp?.name || 'Inconnu',
+        emp?.position || '',
+        statusLabel,
+        contractLabel,
+        leaveLabel,
+        rec.startDate,
+        rec.endDate,
+        rec.daysCount,
+        remunLabel,
+        rec.notes || ''
+      ];
+    });
+
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+    ws['!cols'] = [
+      { wch: 16 },
+      { wch: 26 },
+      { wch: 26 },
+      { wch: 24 },
+      { wch: 22 },
+      { wch: 24 },
+      { wch: 16 },
+      { wch: 16 },
+      { wch: 18 },
+      { wch: 22 },
+      { wch: 32 }
+    ];
+
+    XLSX.utils.book_append_sheet(wb, ws, 'Journal Conges');
+    XLSX.writeFile(wb, `journal_conges_rh_${new Date().toISOString().split('T')[0]}.xlsx`);
+  };
 
   const handleExportCSV = () => {
     if (sortedRecords.length === 0) {
@@ -136,22 +200,34 @@ export const LedgerHistory: React.FC<LedgerHistoryProps> = ({
           </p>
         </div>
 
-        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5">
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={handleExportExcel}
+            className="inline-flex items-center justify-center gap-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-950 text-xs font-bold px-3.5 py-2.5 rounded-xl border border-emerald-300 shadow-2xs transition-all cursor-pointer active:scale-98"
+            title="Exporter l'historique des congés au format Excel (.xlsx)"
+          >
+            <FileSpreadsheet className="w-4 h-4 text-emerald-700" />
+            <span>Exporter Excel (.xlsx)</span>
+          </button>
+
           <button
             id="btn-export-csv"
+            type="button"
             onClick={handleExportCSV}
-            className="inline-flex items-center justify-center gap-2 bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-bold px-4 py-2.5 rounded-xl transition-all shadow-xs cursor-pointer active:scale-98"
-            title="Exporter la liste filtrée au format CSV pour Excel"
+            className="inline-flex items-center justify-center gap-1.5 bg-white hover:bg-stone-50 text-stone-800 text-xs font-bold px-3.5 py-2.5 rounded-xl border border-stone-200 shadow-2xs transition-all cursor-pointer active:scale-98"
+            title="Exporter la liste filtrée au format CSV"
           >
-            <Download className="w-4 h-4 text-emerald-200" />
-            Exporter en CSV ({sortedRecords.length})
+            <Download className="w-4 h-4 text-stone-600" />
+            <span>Exporter CSV ({sortedRecords.length})</span>
           </button>
+
           <button
             onClick={onOpenLeaveModal}
             className="inline-flex items-center justify-center gap-2 bg-stone-900 hover:bg-stone-800 text-white text-xs font-bold px-4 py-2.5 rounded-xl transition-all shadow-xs cursor-pointer active:scale-98"
           >
             <Plus className="w-4 h-4 text-amber-400" />
-            Nouvelle Entrée au Journal
+            <span>Nouvelle Entrée</span>
           </button>
         </div>
       </div>
