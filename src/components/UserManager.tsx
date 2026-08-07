@@ -1,7 +1,21 @@
 import React, { useState, useEffect } from 'react';
-import { User, Shield, ShieldCheck, Trash2, UserPlus, Search, RefreshCw } from 'lucide-react';
+import { 
+  User, 
+  Shield, 
+  ShieldCheck, 
+  Trash2, 
+  UserPlus, 
+  Search, 
+  RefreshCw,
+  CheckCircle2,
+  AlertTriangle,
+  KeyRound,
+  Mail,
+  AlertCircle
+} from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { DbUser, fetchUsers, saveUserDoc, deleteUserDoc } from '../services/firestoreService';
+import { ConfirmModal } from './ConfirmModal';
 
 export const UserManager: React.FC = () => {
   const { user } = useAuth();
@@ -14,6 +28,13 @@ export const UserManager: React.FC = () => {
   const [newName, setNewName] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [newRole, setNewRole] = useState<'ADMIN' | 'HR Manager'>('HR Manager');
+  const [errors, setErrors] = useState<{ [key: string]: string }>({});
+  const [isSubmittedAttempt, setIsSubmittedAttempt] = useState(false);
+
+  // Confirmation state
+  const [showSaveConfirmModal, setShowSaveConfirmModal] = useState(false);
+  const [showCancelConfirmModal, setShowCancelConfirmModal] = useState(false);
+  const [userToDelete, setUserToDelete] = useState<DbUser | null>(null);
 
   const loadUsers = async () => {
     setLoading(true);
@@ -31,21 +52,66 @@ export const UserManager: React.FC = () => {
     loadUsers();
   }, []);
 
-  const handleDelete = async (uid: string) => {
-    if (!window.confirm('Êtes-vous sûr de vouloir supprimer cet utilisateur dans Cloud Firestore ?')) return;
-    try {
-      await deleteUserDoc(uid);
-      setUsers((prev) => prev.filter((u) => u.uid !== uid));
-    } catch (err) {
-      console.error('Failed to delete user:', err);
-      alert('Erreur lors de la suppression de l’utilisateur.');
+  const isFormDirty = (): boolean => {
+    return Boolean(newUsername.trim() || newName.trim() || newPassword.trim());
+  };
+
+  const handleRequestClose = () => {
+    if (isFormDirty()) {
+      setShowCancelConfirmModal(true);
+    } else {
+      setShowAddModal(false);
+      setErrors({});
+      setIsSubmittedAttempt(false);
     }
   };
 
-  const handleCreate = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newUsername.trim()) return;
+  const validateUserForm = (): boolean => {
+    const errs: { [key: string]: string } = {};
 
+    if (!newName.trim()) {
+      errs.name = 'Le nom complet est obligatoire.';
+    } else if (newName.trim().length < 2) {
+      errs.name = 'Le nom doit comporter au moins 2 caractères.';
+    }
+
+    const cleanUsername = newUsername.trim().toLowerCase();
+    if (!cleanUsername) {
+      errs.username = 'L\'identifiant ou email est obligatoire.';
+    } else if (cleanUsername.length < 3) {
+      errs.username = 'L\'identifiant doit comporter au moins 3 caractères.';
+    } else {
+      const isDuplicate = users.some(
+        (u) => 
+          u.email.toLowerCase() === cleanUsername || 
+          u.uid.toLowerCase() === `local-${cleanUsername.replace('@local.app', '')}`
+      );
+      if (isDuplicate) {
+        errs.username = `L'identifiant "${cleanUsername}" existe déjà.`;
+      }
+    }
+
+    if (!newPassword.trim()) {
+      errs.password = 'Le mot de passe est obligatoire.';
+    } else if (newPassword.trim().length < 4) {
+      errs.password = 'Le mot de passe doit comporter au moins 4 caractères.';
+    }
+
+    setErrors(errs);
+    return Object.keys(errs).length === 0;
+  };
+
+  const handlePreCreate = (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsSubmittedAttempt(true);
+    if (!validateUserForm()) {
+      return;
+    }
+    setShowSaveConfirmModal(true);
+  };
+
+  const handleExecuteCreate = async () => {
+    setShowSaveConfirmModal(false);
     try {
       const clean = newUsername.trim().toLowerCase();
       const email = clean.includes('@') ? clean : `${clean}@local.app`;
@@ -67,9 +133,24 @@ export const UserManager: React.FC = () => {
       setNewName('');
       setNewPassword('');
       setNewRole('HR Manager');
+      setErrors({});
+      setIsSubmittedAttempt(false);
     } catch (err) {
       console.error('Failed to create user:', err);
       alert('Erreur lors de la création de l’utilisateur.');
+    }
+  };
+
+  const handleExecuteDelete = async () => {
+    if (!userToDelete) return;
+    const uid = userToDelete.uid;
+    setUserToDelete(null);
+    try {
+      await deleteUserDoc(uid);
+      setUsers((prev) => prev.filter((u) => u.uid !== uid));
+    } catch (err) {
+      console.error('Failed to delete user:', err);
+      alert('Erreur lors de la suppression de l’utilisateur.');
     }
   };
 
@@ -78,6 +159,11 @@ export const UserManager: React.FC = () => {
     (u.email || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
     (u.role || '').toLowerCase().includes(searchTerm.toLowerCase())
   );
+
+  const isNameValid = newName.trim().length >= 2;
+  const isUsernameValid = newUsername.trim().length >= 3;
+  const isPasswordValid = newPassword.trim().length >= 4;
+  const isFormFullyValid = isNameValid && isUsernameValid && isPasswordValid;
 
   return (
     <div className="space-y-6">
@@ -101,7 +187,15 @@ export const UserManager: React.FC = () => {
             <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
           </button>
           <button
-            onClick={() => setShowAddModal(true)}
+            onClick={() => {
+              setNewName('');
+              setNewUsername('');
+              setNewPassword('');
+              setNewRole('HR Manager');
+              setErrors({});
+              setIsSubmittedAttempt(false);
+              setShowAddModal(true);
+            }}
             className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl transition-all shadow-2xs cursor-pointer"
           >
             <UserPlus className="w-4 h-4" />
@@ -136,12 +230,19 @@ export const UserManager: React.FC = () => {
             {filteredUsers.map((u) => (
               <div key={u.uid} className="p-4 hover:bg-stone-50 transition-colors flex items-center justify-between">
                 <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-stone-100 flex items-center justify-center text-stone-700 font-bold uppercase text-sm border border-stone-200">
+                  <div className="w-10 h-10 rounded-xl bg-stone-100 flex items-center justify-center text-stone-700 font-bold uppercase text-sm border border-stone-200 shrink-0">
                     {u.name?.charAt(0) || u.email?.charAt(0) || 'U'}
                   </div>
                   <div>
                     <h3 className="text-sm font-bold text-stone-900">{u.name}</h3>
-                    <p className="text-xs text-stone-500">{u.email}</p>
+                    <div className="flex flex-wrap items-center gap-2 mt-0.5">
+                      <span className="text-xs text-stone-500 font-mono">{u.email}</span>
+                      {u.password && (
+                        <span className="text-[10px] bg-stone-100 text-stone-600 font-mono px-1.5 py-0.2 rounded border border-stone-200">
+                          Mot de passe: <strong>{u.password}</strong>
+                        </span>
+                      )}
+                    </div>
                     <span className="text-3xs text-stone-400 font-mono">ID: {u.uid}</span>
                   </div>
                 </div>
@@ -156,7 +257,7 @@ export const UserManager: React.FC = () => {
                     {u.role}
                   </span>
                   <button
-                    onClick={() => handleDelete(u.uid)}
+                    onClick={() => setUserToDelete(u)}
                     title="Supprimer"
                     className="p-1.5 text-stone-400 hover:text-red-600 rounded-lg hover:bg-red-50 transition-colors cursor-pointer"
                   >
@@ -172,62 +273,109 @@ export const UserManager: React.FC = () => {
       {/* Add User Modal */}
       {showAddModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4">
-          <div className="bg-white rounded-2xl border border-stone-200 p-6 max-w-md w-full shadow-xl space-y-4">
+          <div className="bg-white rounded-3xl border border-stone-200 p-6 max-w-md w-full shadow-xl space-y-4 animate-in zoom-in-95 duration-150">
             <h3 className="text-base font-bold text-stone-900">Créer un nouveau compte utilisateur</h3>
 
-            <form onSubmit={handleCreate} className="space-y-3">
+            {isSubmittedAttempt && Object.keys(errors).length > 0 && (
+              <div className="p-3 bg-red-50 border border-red-200 rounded-xl flex items-start gap-2 text-xs text-red-800">
+                <AlertCircle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
+                <div>
+                  <p className="font-bold">Informations incomplètes :</p>
+                  <ul className="list-disc pl-4 text-2xs mt-0.5">
+                    {Object.values(errors).map((err, i) => (
+                      <li key={i}>{err}</li>
+                    ))}
+                  </ul>
+                </div>
+              </div>
+            )}
+
+            <form onSubmit={handlePreCreate} className="space-y-3.5">
               <div>
-                <label className="block text-xs font-semibold text-stone-700 mb-1">Nom Complet</label>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-2xs font-bold text-stone-700 uppercase">Nom Complet *</label>
+                  {isNameValid && <CheckCircle2 className="w-3 h-3 text-emerald-600" />}
+                </div>
                 <input
                   type="text"
                   required
                   placeholder="Ex: Jean Dupont"
                   value={newName}
-                  onChange={(e) => setNewName(e.target.value)}
-                  className="w-full text-xs px-3 py-2 bg-stone-50 border border-stone-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
+                  onChange={(e) => {
+                    setNewName(e.target.value);
+                    if (errors.name) {
+                      setErrors(prev => { const n = { ...prev }; delete n.name; return n; });
+                    }
+                  }}
+                  className={`w-full text-xs px-3.5 py-2.5 bg-stone-50 border rounded-xl focus:bg-white focus:ring-2 focus:ring-indigo-500 outline-none ${
+                    errors.name ? 'border-red-500 ring-2 ring-red-200' : 'border-stone-200'
+                  }`}
                 />
+                {errors.name && <p className="text-2xs text-red-600 mt-1">{errors.name}</p>}
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-stone-700 mb-1">Identifiant / Email</label>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-2xs font-bold text-stone-700 uppercase">Identifiant / Email *</label>
+                  {isUsernameValid && <CheckCircle2 className="w-3 h-3 text-emerald-600" />}
+                </div>
                 <input
                   type="text"
                   required
-                  placeholder="Ex: jean.dupont ou jdupont"
+                  placeholder="Ex: HRbata, hrmalabo, parkmalabo ou admin"
                   value={newUsername}
-                  onChange={(e) => setNewUsername(e.target.value)}
-                  className="w-full text-xs px-3 py-2 bg-stone-50 border border-stone-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
+                  onChange={(e) => {
+                    setNewUsername(e.target.value);
+                    if (errors.username) {
+                      setErrors(prev => { const n = { ...prev }; delete n.username; return n; });
+                    }
+                  }}
+                  className={`w-full text-xs px-3.5 py-2.5 bg-stone-50 border rounded-xl focus:bg-white focus:ring-2 focus:ring-indigo-500 outline-none ${
+                    errors.username ? 'border-red-500 ring-2 ring-red-200' : 'border-stone-200'
+                  }`}
                 />
+                {errors.username && <p className="text-2xs text-red-600 mt-1">{errors.username}</p>}
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-stone-700 mb-1">Mot de passe</label>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-2xs font-bold text-stone-700 uppercase">Mot de passe *</label>
+                  {isPasswordValid && <CheckCircle2 className="w-3 h-3 text-emerald-600" />}
+                </div>
                 <input
                   type="password"
                   required
                   placeholder="••••••••"
                   value={newPassword}
-                  onChange={(e) => setNewPassword(e.target.value)}
-                  className="w-full text-xs px-3 py-2 bg-stone-50 border border-stone-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
+                  onChange={(e) => {
+                    setNewPassword(e.target.value);
+                    if (errors.password) {
+                      setErrors(prev => { const n = { ...prev }; delete n.password; return n; });
+                    }
+                  }}
+                  className={`w-full text-xs px-3.5 py-2.5 bg-stone-50 border rounded-xl focus:bg-white focus:ring-2 focus:ring-indigo-500 outline-none ${
+                    errors.password ? 'border-red-500 ring-2 ring-red-200' : 'border-stone-200'
+                  }`}
                 />
+                {errors.password && <p className="text-2xs text-red-600 mt-1">{errors.password}</p>}
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-stone-700 mb-1">Rôle</label>
+                <label className="block text-2xs font-bold text-stone-700 uppercase mb-1">Rôle et Permissions *</label>
                 <select
                   value={newRole}
                   onChange={(e) => setNewRole(e.target.value as 'ADMIN' | 'HR Manager')}
-                  className="w-full text-xs px-3 py-2 bg-stone-50 border border-stone-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none font-medium"
+                  className="w-full text-xs px-3.5 py-2.5 bg-stone-50 border border-stone-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none font-semibold"
                 >
                   <option value="HR Manager">HR Manager (Gestionnaire RH)</option>
                   <option value="ADMIN">ADMIN (Administrateur Total)</option>
                 </select>
               </div>
 
-              <div className="flex justify-end gap-2 pt-2">
+              <div className="flex justify-end gap-2 pt-2 border-t border-stone-100">
                 <button
                   type="button"
-                  onClick={() => setShowAddModal(false)}
+                  onClick={handleRequestClose}
                   className="px-4 py-2 text-xs font-semibold text-stone-600 hover:bg-stone-100 rounded-xl cursor-pointer"
                 >
                   Annuler
@@ -242,6 +390,58 @@ export const UserManager: React.FC = () => {
             </form>
           </div>
         </div>
+      )}
+
+      {/* Save Confirm Modal */}
+      <ConfirmModal
+        isOpen={showSaveConfirmModal}
+        title="Confirmer la création de ce compte ?"
+        subtitle="Vérifiez les identifiants de ce nouvel utilisateur avant enregistrement dans Firestore."
+        type="save"
+        confirmLabel="Confirmer la création"
+        cancelLabel="Continuer la saisie"
+        summaryItems={[
+          { label: "Nom Complet", value: newName },
+          { label: "Identifiant / Email", value: newUsername.includes('@') ? newUsername : `${newUsername}@local.app` },
+          { label: "Rôle", value: newRole }
+        ]}
+        onConfirm={handleExecuteCreate}
+        onCancel={() => setShowSaveConfirmModal(false)}
+      />
+
+      {/* Cancel Dirty Warning Modal */}
+      <ConfirmModal
+        isOpen={showCancelConfirmModal}
+        title="Abandonner la création de compte ?"
+        subtitle="Des informations ont été saisies dans le formulaire."
+        type="warning"
+        confirmLabel="Quitter sans créer"
+        cancelLabel="Continuer la saisie"
+        warningMessage="Les données renseignées ne seront pas sauvegardées."
+        onConfirm={() => {
+          setShowCancelConfirmModal(false);
+          setShowAddModal(false);
+        }}
+        onCancel={() => setShowCancelConfirmModal(false)}
+      />
+
+      {/* Delete User Modal */}
+      {userToDelete && (
+        <ConfirmModal
+          isOpen={Boolean(userToDelete)}
+          title={`Supprimer le compte ${userToDelete.name} ?`}
+          subtitle="Cet utilisateur ne pourra plus se connecter à l'application."
+          type="danger"
+          confirmLabel="Oui, supprimer"
+          cancelLabel="Annuler"
+          summaryItems={[
+            { label: "Nom", value: userToDelete.name },
+            { label: "Email", value: userToDelete.email },
+            { label: "Rôle", value: userToDelete.role }
+          ]}
+          onConfirm={handleExecuteDelete}
+          onCancel={() => setUserToDelete(null)}
+        />
       )}
     </div>
   );

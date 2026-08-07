@@ -22,11 +22,14 @@ import {
   Download,
   Filter,
   Hash,
-  Sparkles
+  Sparkles,
+  CheckCircle2,
+  AlertCircle
 } from 'lucide-react';
 import { Employee, ContractType, EmployeeStatus, LeaveRecord } from '../types';
 import { calculateEmployeeStats, LEAVE_TYPE_LABELS } from '../utils/vacationCalc';
 import { EmployeeImportModal } from './EmployeeImportModal';
+import { ConfirmModal } from './ConfirmModal';
 
 interface EmployeeManagerProps {
   employees: Employee[];
@@ -63,6 +66,27 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({
   const [hireDate, setHireDate] = useState(new Date().toISOString().split('T')[0]);
   const [contractType, setContractType] = useState<ContractType>('TYPE_A');
   const [errors, setErrors] = useState<{ [key: string]: string }>({});
+  const [isSubmittedAttempt, setIsSubmittedAttempt] = useState(false);
+
+  // Confirmation Modals State
+  const [showSaveConfirmModal, setShowSaveConfirmModal] = useState(false);
+  const [showCancelConfirmModal, setShowCancelConfirmModal] = useState(false);
+  const [employeeToDelete, setEmployeeToDelete] = useState<Employee | null>(null);
+
+  const isFormDirty = (): boolean => {
+    if (!isFormOpen) return false;
+    if (editingEmployee) {
+      return (
+        idNumber.trim() !== (editingEmployee.idNumber || '') ||
+        name.trim() !== editingEmployee.name ||
+        position.trim() !== (editingEmployee.position || '') ||
+        status !== editingEmployee.status ||
+        hireDate !== editingEmployee.hireDate ||
+        contractType !== editingEmployee.contractType
+      );
+    }
+    return Boolean(name.trim() || position.trim() || idNumber.trim());
+  };
 
   const handleOpenAddForm = () => {
     setEditingEmployee(null);
@@ -73,6 +97,7 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({
     setHireDate(new Date().toISOString().split('T')[0]);
     setContractType('TYPE_A');
     setErrors({});
+    setIsSubmittedAttempt(false);
     setIsFormOpen(true);
   };
 
@@ -85,22 +110,97 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({
     setHireDate(emp.hireDate);
     setContractType(emp.contractType);
     setErrors({});
+    setIsSubmittedAttempt(false);
     setIsFormOpen(true);
+  };
+
+  const handleRequestCloseForm = () => {
+    if (isFormDirty()) {
+      setShowCancelConfirmModal(true);
+    } else {
+      setIsFormOpen(false);
+      setErrors({});
+      setIsSubmittedAttempt(false);
+    }
   };
 
   const validateForm = (): boolean => {
     const errs: { [key: string]: string } = {};
-    if (!name.trim()) errs.name = 'Le nom de l\'employé est obligatoire.';
-    if (!idNumber.trim()) errs.idNumber = 'Le N° Matricule / ID est obligatoire.';
-    if (!position.trim()) errs.position = 'Le poste / fonction est obligatoire.';
-    if (!hireDate) errs.hireDate = 'La date d\'embauche est obligatoire.';
+
+    // 1. Nom & Prénom
+    const trimmedName = name.trim();
+    if (!trimmedName) {
+      errs.name = 'Le nom et prénom de l\'employé sont obligatoires.';
+    } else if (trimmedName.length < 2) {
+      errs.name = 'Le nom doit comporter au moins 2 caractères.';
+    }
+
+    // 2. N° Matricule
+    const trimmedIdNumber = idNumber.trim();
+    if (!trimmedIdNumber) {
+      errs.idNumber = 'Le N° Matricule / ID unique est obligatoire.';
+    } else if (trimmedIdNumber.length < 2) {
+      errs.idNumber = 'Le N° Matricule doit comporter au moins 2 caractères (ex: MAT-001).';
+    } else {
+      // Check for uniqueness
+      const isDuplicate = employees.some(
+        (emp) => 
+          emp.idNumber && 
+          emp.idNumber.toLowerCase() === trimmedIdNumber.toLowerCase() &&
+          (!editingEmployee || emp.id !== editingEmployee.id)
+      );
+      if (isDuplicate) {
+        errs.idNumber = `Le matricule "${trimmedIdNumber}" est déjà attribué à un autre employé.`;
+      }
+    }
+
+    // 3. Poste / Fonction
+    const trimmedPos = position.trim();
+    if (!trimmedPos) {
+      errs.position = 'L\'intitulé du poste / fonction est obligatoire.';
+    } else if (trimmedPos.length < 2) {
+      errs.position = 'L\'intitulé du poste doit comporter au moins 2 caractères.';
+    }
+
+    // 4. Date d'embauche
+    if (!hireDate) {
+      errs.hireDate = 'La date d\'embauche est obligatoire.';
+    } else {
+      const parsedDate = new Date(hireDate);
+      if (isNaN(parsedDate.getTime())) {
+        errs.hireDate = 'Date d\'embauche invalide (format AAAA-MM-JJ requis).';
+      } else {
+        const year = parsedDate.getFullYear();
+        if (year < 1970 || year > 2099) {
+          errs.hireDate = 'Veuillez saisir une année valide entre 1970 et 2099.';
+        }
+      }
+    }
+
+    // 5. Statut & Type de contrat
+    if (!status || (status !== 'LOCAL' && status !== 'EXPAT')) {
+      errs.status = 'Veuillez sélectionner un statut contractuel valide (LOCAL ou EXPAT).';
+    }
+    if (!contractType || (contractType !== 'TYPE_A' && contractType !== 'TYPE_B')) {
+      errs.contractType = 'Veuillez sélectionner un cycle de congés valide (Type A ou Type B).';
+    }
+
     setErrors(errs);
     return Object.keys(errs).length === 0;
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleFormPreSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!validateForm()) return;
+    setIsSubmittedAttempt(true);
+    if (!validateForm()) {
+      return;
+    }
+    // All requirements are fulfilled -> Open Confirmation Popup
+    setShowSaveConfirmModal(true);
+  };
+
+  const handleExecuteSave = () => {
+    setShowSaveConfirmModal(false);
 
     if (editingEmployee) {
       onUpdateEmployee({
@@ -124,6 +224,8 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({
     }
 
     setIsFormOpen(false);
+    setIsSubmittedAttempt(false);
+    setEditingEmployee(null);
   };
 
   const handleExportEmployeesCsv = () => {
@@ -197,6 +299,14 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({
   const selectedEmpStats = selectedEmployee ? calculateEmployeeStats(selectedEmployee, leaveRecords) : null;
   const selectedEmpRecords = selectedEmployee ? leaveRecords.filter((r) => r.employeeId === selectedEmployee.id) : [];
 
+  // Check if form is currently valid in real-time
+  const isNameValid = name.trim().length >= 2;
+  const isIdValid = idNumber.trim().length >= 2;
+  const isPositionValid = position.trim().length >= 2;
+  const isHireDateValid = Boolean(hireDate && !isNaN(new Date(hireDate).getTime()));
+  const validFieldsCount = (isNameValid ? 1 : 0) + (isIdValid ? 1 : 0) + (isPositionValid ? 1 : 0) + (isHireDateValid ? 1 : 0);
+  const isFormFullyValid = validFieldsCount === 4;
+
   return (
     <div className="space-y-6">
       {/* Action Header */}
@@ -209,7 +319,7 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({
             </span>
           </h2>
           <p className="text-xs text-stone-500 mt-0.5">
-            Renseignez N° Matricule, Fonction, Statut (Personnel Local vs Expatrié) et Cycle de Congés.
+            Renseignez N° Matricule, Fonction, Statut (Personnel Local vs Expatrié) et Cycle de Congés avec validation stricte.
           </p>
         </div>
 
@@ -246,98 +356,142 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({
       {/* Add / Edit Form Modal */}
       {isFormOpen && (
         <div className="fixed inset-0 bg-stone-900/50 backdrop-blur-xs flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-2xl border border-stone-200 shadow-2xl max-w-lg w-full p-6 space-y-5 animate-in fade-in zoom-in-95 duration-150 max-h-[92vh] overflow-y-auto">
+          <div className="bg-white rounded-3xl border border-stone-200 shadow-2xl max-w-xl w-full p-6 space-y-5 animate-in fade-in zoom-in-95 duration-150 max-h-[92vh] overflow-y-auto">
+            {/* Modal Header */}
             <div className="flex items-center justify-between border-b border-stone-100 pb-3">
               <div className="flex items-center gap-2.5">
-                <div className="w-9 h-9 rounded-xl bg-stone-900 text-white flex items-center justify-center">
-                  <UserPlus className="w-5 h-5 text-amber-400" />
+                <div className="w-10 h-10 rounded-2xl bg-stone-900 text-white flex items-center justify-center shadow-xs">
+                  {editingEmployee ? <Edit3 className="w-5 h-5 text-amber-400" /> : <UserPlus className="w-5 h-5 text-amber-400" />}
                 </div>
                 <div>
                   <h3 className="text-lg font-bold text-stone-900">
-                    {editingEmployee ? `Modifier : ${editingEmployee.name}` : 'Nouvel Employé'}
+                    {editingEmployee ? `Modifier l'employé : ${editingEmployee.name}` : 'Nouvel Employé'}
                   </h3>
-                  <p className="text-2xs text-stone-500">Formulaire d'identification et profil contractuel</p>
+                  <p className="text-2xs text-stone-500">Tous les champs marqués d'une étoile (*) sont strictement requis</p>
                 </div>
               </div>
               <button
-                onClick={() => setIsFormOpen(false)}
-                className="text-stone-400 hover:text-stone-700 p-1.5 rounded-lg transition-colors cursor-pointer"
+                onClick={handleRequestCloseForm}
+                className="text-stone-400 hover:text-stone-700 p-1.5 rounded-full hover:bg-stone-100 transition-colors cursor-pointer"
+                title="Fermer"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <form onSubmit={handleSubmit} className="space-y-4">
+            {/* Validation Banner if Errors exist */}
+            {isSubmittedAttempt && Object.keys(errors).length > 0 && (
+              <div className="p-3.5 bg-red-50 border border-red-200 rounded-2xl flex items-start gap-2.5 text-xs text-red-800">
+                <AlertCircle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
+                <div>
+                  <p className="font-bold">Informations requises incomplètes ou invalides :</p>
+                  <ul className="list-disc pl-4 mt-1 space-y-0.5 text-2xs">
+                    {Object.values(errors).map((err, i) => (
+                      <li key={i}>{err}</li>
+                    ))}
+                  </ul>
+                </div>
+              </div>
+            )}
+
+            <form onSubmit={handleFormPreSubmit} className="space-y-4">
               {/* N° Matricule & Nom */}
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div className="sm:col-span-1">
-                  <label className="block text-2xs font-bold text-stone-700 uppercase tracking-wider mb-1 flex items-center gap-1">
-                    <Hash className="w-3 h-3 text-stone-500" />
-                    N° Matricule *
-                  </label>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-2xs font-bold text-stone-700 uppercase tracking-wider flex items-center gap-1">
+                      <Hash className="w-3 h-3 text-stone-500" />
+                      N° Matricule *
+                    </label>
+                    {isIdValid && <CheckCircle2 className="w-3 h-3 text-emerald-600" />}
+                  </div>
                   <input
                     type="text"
+                    required
                     placeholder="MAT-0001"
                     value={idNumber}
-                    onChange={(e) => setIdNumber(e.target.value)}
-                    className={`w-full px-3 py-2 rounded-xl border bg-stone-50 font-mono font-bold text-stone-900 text-sm focus:bg-white focus:outline-none focus:ring-2 focus:ring-stone-900/10 transition-all ${
-                      errors.idNumber ? 'border-red-400' : 'border-stone-200'
+                    onChange={(e) => {
+                      setIdNumber(e.target.value);
+                      if (errors.idNumber) {
+                        setErrors(prev => { const n = { ...prev }; delete n.idNumber; return n; });
+                      }
+                    }}
+                    className={`w-full px-3 py-2 rounded-xl border bg-stone-50 font-mono font-bold text-stone-900 text-xs sm:text-sm focus:bg-white focus:outline-none focus:ring-2 focus:ring-stone-900/10 transition-all ${
+                      errors.idNumber ? 'border-red-500 ring-2 ring-red-200 bg-red-50/30' : 'border-stone-200'
                     }`}
                   />
-                  {errors.idNumber && <p className="text-2xs text-red-500 font-medium mt-1">{errors.idNumber}</p>}
+                  {errors.idNumber && <p className="text-2xs text-red-600 font-medium mt-1">{errors.idNumber}</p>}
                 </div>
 
                 <div className="sm:col-span-2">
-                  <label className="block text-2xs font-bold text-stone-700 uppercase tracking-wider mb-1">
-                    Nom & Prénom de l'employé *
-                  </label>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-2xs font-bold text-stone-700 uppercase tracking-wider">
+                      Nom & Prénom de l'employé *
+                    </label>
+                    {isNameValid && <CheckCircle2 className="w-3 h-3 text-emerald-600" />}
+                  </div>
                   <input
                     type="text"
+                    required
                     placeholder="ex: Karim Alami"
                     value={name}
-                    onChange={(e) => setName(e.target.value)}
-                    className={`w-full px-3 py-2 rounded-xl border bg-stone-50 text-stone-900 text-sm focus:bg-white focus:outline-none focus:ring-2 focus:ring-stone-900/10 transition-all ${
-                      errors.name ? 'border-red-400' : 'border-stone-200'
+                    onChange={(e) => {
+                      setName(e.target.value);
+                      if (errors.name) {
+                        setErrors(prev => { const n = { ...prev }; delete n.name; return n; });
+                      }
+                    }}
+                    className={`w-full px-3 py-2 rounded-xl border bg-stone-50 text-stone-900 text-xs sm:text-sm focus:bg-white focus:outline-none focus:ring-2 focus:ring-stone-900/10 transition-all ${
+                      errors.name ? 'border-red-500 ring-2 ring-red-200 bg-red-50/30' : 'border-stone-200'
                     }`}
                   />
-                  {errors.name && <p className="text-2xs text-red-500 font-medium mt-1">{errors.name}</p>}
+                  {errors.name && <p className="text-2xs text-red-600 font-medium mt-1">{errors.name}</p>}
                 </div>
               </div>
 
               {/* Poste / Fonction */}
               <div>
-                <label className="block text-2xs font-bold text-stone-700 uppercase tracking-wider mb-1 flex items-center gap-1">
-                  <Briefcase className="w-3 h-3 text-stone-500" />
-                  Poste / Fonction *
-                </label>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-2xs font-bold text-stone-700 uppercase tracking-wider flex items-center gap-1">
+                    <Briefcase className="w-3 h-3 text-stone-500" />
+                    Poste / Fonction *
+                  </label>
+                  {isPositionValid && <CheckCircle2 className="w-3 h-3 text-emerald-600" />}
+                </div>
                 <input
                   type="text"
+                  required
                   placeholder="ex: Ingénieur Projet, Responsable RH, Superviseur Site"
                   value={position}
-                  onChange={(e) => setPosition(e.target.value)}
-                  className={`w-full px-3 py-2 rounded-xl border bg-stone-50 text-stone-900 text-sm focus:bg-white focus:outline-none focus:ring-2 focus:ring-stone-900/10 transition-all ${
-                    errors.position ? 'border-red-400' : 'border-stone-200'
+                  onChange={(e) => {
+                    setPosition(e.target.value);
+                    if (errors.position) {
+                      setErrors(prev => { const n = { ...prev }; delete n.position; return n; });
+                    }
+                  }}
+                  className={`w-full px-3 py-2 rounded-xl border bg-stone-50 text-stone-900 text-xs sm:text-sm focus:bg-white focus:outline-none focus:ring-2 focus:ring-stone-900/10 transition-all ${
+                    errors.position ? 'border-red-500 ring-2 ring-red-200 bg-red-50/30' : 'border-stone-200'
                   }`}
                 />
-                {errors.position && <p className="text-2xs text-red-500 font-medium mt-1">{errors.position}</p>}
+                {errors.position && <p className="text-2xs text-red-600 font-medium mt-1">{errors.position}</p>}
               </div>
 
               {/* Statut Contractuel (Personnel Local vs Expatrié) */}
               <div>
                 <label className="block text-2xs font-bold text-stone-700 uppercase tracking-wider mb-1.5">
-                  Statut Contractuel (LOCAL vs EXPAT)
+                  Statut Contractuel (LOCAL vs EXPAT) *
                 </label>
                 <div className="grid grid-cols-2 gap-3">
                   <button
                     type="button"
                     onClick={() => setStatus('LOCAL')}
-                    className={`flex items-center gap-2.5 p-3 rounded-xl border text-left transition-all cursor-pointer ${
+                    className={`flex items-center gap-2.5 p-3 rounded-2xl border text-left transition-all cursor-pointer ${
                       status === 'LOCAL'
                         ? 'bg-teal-50 border-teal-500 text-teal-950 font-bold ring-2 ring-teal-500/20'
                         : 'bg-stone-50 border-stone-200 text-stone-600 hover:bg-stone-100'
                     }`}
                   >
-                    <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${status === 'LOCAL' ? 'bg-teal-600 text-white' : 'bg-stone-200 text-stone-600'}`}>
+                    <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${status === 'LOCAL' ? 'bg-teal-600 text-white' : 'bg-stone-200 text-stone-600'}`}>
                       <Building2 className="w-4 h-4" />
                     </div>
                     <div>
@@ -349,13 +503,13 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({
                   <button
                     type="button"
                     onClick={() => setStatus('EXPAT')}
-                    className={`flex items-center gap-2.5 p-3 rounded-xl border text-left transition-all cursor-pointer ${
+                    className={`flex items-center gap-2.5 p-3 rounded-2xl border text-left transition-all cursor-pointer ${
                       status === 'EXPAT'
                         ? 'bg-purple-50 border-purple-500 text-purple-950 font-bold ring-2 ring-purple-500/20'
                         : 'bg-stone-50 border-stone-200 text-stone-600 hover:bg-stone-100'
                     }`}
                   >
-                    <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${status === 'EXPAT' ? 'bg-purple-600 text-white' : 'bg-stone-200 text-stone-600'}`}>
+                    <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${status === 'EXPAT' ? 'bg-purple-600 text-white' : 'bg-stone-200 text-stone-600'}`}>
                       <Globe className="w-4 h-4" />
                     </div>
                     <div>
@@ -368,26 +522,38 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({
 
               {/* Date d'Embauche */}
               <div>
-                <label className="block text-2xs font-bold text-stone-700 uppercase tracking-wider mb-1 flex items-center gap-1">
-                  <Calendar className="w-3 h-3 text-stone-500" />
-                  Date d'embauche *
-                </label>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-2xs font-bold text-stone-700 uppercase tracking-wider flex items-center gap-1">
+                    <Calendar className="w-3 h-3 text-stone-500" />
+                    Date d'embauche *
+                  </label>
+                  {isHireDateValid && <CheckCircle2 className="w-3 h-3 text-emerald-600" />}
+                </div>
                 <input
                   type="date"
+                  required
                   value={hireDate}
-                  onChange={(e) => setHireDate(e.target.value)}
-                  className="w-full px-3 py-2 rounded-xl border border-stone-200 bg-stone-50 text-stone-900 text-sm focus:bg-white focus:outline-none focus:ring-2 focus:ring-stone-900/10 transition-all"
+                  onChange={(e) => {
+                    setHireDate(e.target.value);
+                    if (errors.hireDate) {
+                      setErrors(prev => { const n = { ...prev }; delete n.hireDate; return n; });
+                    }
+                  }}
+                  className={`w-full px-3 py-2 rounded-xl border bg-stone-50 text-stone-900 text-xs sm:text-sm focus:bg-white focus:outline-none focus:ring-2 focus:ring-stone-900/10 transition-all ${
+                    errors.hireDate ? 'border-red-500 ring-2 ring-red-200 bg-red-50/30' : 'border-stone-200'
+                  }`}
                 />
+                {errors.hireDate && <p className="text-2xs text-red-600 font-medium mt-1">{errors.hireDate}</p>}
               </div>
 
               {/* Type de Contrat & Cycle de Congés */}
               <div>
                 <label className="block text-2xs font-bold text-stone-700 uppercase tracking-wider mb-1.5">
-                  Cycle de Congés & Droits
+                  Cycle de Congés & Droits *
                 </label>
                 <div className="grid grid-cols-2 gap-3">
                   <label
-                    className={`flex flex-col p-3 rounded-xl border cursor-pointer text-xs transition-all ${
+                    className={`flex flex-col p-3 rounded-2xl border cursor-pointer text-xs transition-all ${
                       contractType === 'TYPE_A'
                         ? 'bg-emerald-50 border-emerald-500 text-emerald-900 font-bold ring-1 ring-emerald-500/30'
                         : 'bg-stone-50 border-stone-200 text-stone-600 hover:bg-stone-100'
@@ -405,7 +571,7 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({
                       <BadgeCheck className="w-4 h-4 text-emerald-600" />
                       TYPE_A (6 mois)
                     </div>
-                    <span className="text-[10px] font-normal text-stone-500">
+                    <span className="text-[10px] font-normal text-stone-500 leading-relaxed">
                       • 30 jours / 6 mois<br />
                       • ~0.1644 j/jour<br />
                       • Cycle semestriel
@@ -413,7 +579,7 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({
                   </label>
 
                   <label
-                    className={`flex flex-col p-3 rounded-xl border cursor-pointer text-xs transition-all ${
+                    className={`flex flex-col p-3 rounded-2xl border cursor-pointer text-xs transition-all ${
                       contractType === 'TYPE_B'
                         ? 'bg-blue-50 border-blue-500 text-blue-900 font-bold ring-1 ring-blue-500/30'
                         : 'bg-stone-50 border-stone-200 text-stone-600 hover:bg-stone-100'
@@ -431,7 +597,7 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({
                       <Briefcase className="w-4 h-4 text-blue-600" />
                       TYPE_B (12 mois)
                     </div>
-                    <span className="text-[10px] font-normal text-stone-500">
+                    <span className="text-[10px] font-normal text-stone-500 leading-relaxed">
                       • 30 jours / an<br />
                       • ~0.0822 j/jour<br />
                       • Cycle annuel
@@ -440,25 +606,111 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({
                 </div>
               </div>
 
+              {/* Status Validation Progress */}
+              <div className="p-3 bg-stone-50 rounded-2xl border border-stone-200/80 flex items-center justify-between text-2xs">
+                <span className="text-stone-500 font-medium">Validation des champs :</span>
+                <span className={`font-bold flex items-center gap-1 ${isFormFullyValid ? 'text-emerald-700' : 'text-amber-700'}`}>
+                  {isFormFullyValid ? (
+                    <>
+                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                      Tous les champs requis sont remplis (4/4)
+                    </>
+                  ) : (
+                    <>
+                      <AlertTriangle className="w-3.5 h-3.5 text-amber-600" />
+                      {4 - validFieldsCount} information(s) requise(s) restante(s)
+                    </>
+                  )}
+                </span>
+              </div>
+
               {/* Actions */}
               <div className="flex items-center justify-end gap-3 pt-3 border-t border-stone-100">
                 <button
                   type="button"
-                  onClick={() => setIsFormOpen(false)}
-                  className="px-4 py-2 text-xs font-semibold text-stone-600 hover:text-stone-800 hover:bg-stone-100 rounded-xl transition-colors cursor-pointer"
+                  onClick={handleRequestCloseForm}
+                  className="px-4 py-2.5 text-xs font-semibold text-stone-600 hover:text-stone-800 hover:bg-stone-100 rounded-xl transition-colors cursor-pointer"
                 >
                   Annuler
                 </button>
                 <button
                   type="submit"
-                  className="bg-stone-900 hover:bg-stone-800 text-white text-xs font-bold px-5 py-2.5 rounded-xl shadow-xs transition-all cursor-pointer active:scale-98"
+                  className="bg-stone-900 hover:bg-stone-800 text-white text-xs font-bold px-5 py-2.5 rounded-xl shadow-xs transition-all cursor-pointer active:scale-98 flex items-center gap-2"
                 >
-                  {editingEmployee ? 'Enregistrer les modifications' : 'Créer l\'employé'}
+                  <Check className="w-4 h-4 text-amber-400" />
+                  <span>{editingEmployee ? 'Enregistrer les modifications' : 'Créer l\'employé'}</span>
                 </button>
               </div>
             </form>
           </div>
         </div>
+      )}
+
+      {/* Save / Edit Confirmation Modal */}
+      <ConfirmModal
+        isOpen={showSaveConfirmModal}
+        title={editingEmployee ? "Enregistrer les modifications de l'employé ?" : "Confirmer la création de l'employé ?"}
+        subtitle={
+          editingEmployee
+            ? "Voulez-vous enregistrer les modifications apportées à la fiche de cet employé dans Cloud Firestore ?"
+            : "Veuillez vérifier les informations ci-dessous avant d'enregistrer le nouvel employé dans la base de données."
+        }
+        type="save"
+        confirmLabel={editingEmployee ? "Confirmer la mise à jour" : "Confirmer la création"}
+        cancelLabel="Continuer la modification"
+        summaryItems={[
+          { label: "N° Matricule", value: idNumber, icon: <Hash className="w-3.5 h-3.5 text-stone-400" /> },
+          { label: "Nom & Prénom", value: name, icon: <Users className="w-3.5 h-3.5 text-stone-400" /> },
+          { label: "Poste / Fonction", value: position, icon: <Briefcase className="w-3.5 h-3.5 text-stone-400" /> },
+          { label: "Statut Contractuel", value: status === 'EXPAT' ? 'Expatrié (EXPAT)' : 'Personnel Local (LOCAL)', icon: <Building2 className="w-3.5 h-3.5 text-stone-400" /> },
+          { label: "Date d'Embauche", value: new Date(hireDate).toLocaleDateString('fr-FR'), icon: <Calendar className="w-3.5 h-3.5 text-stone-400" /> },
+          { label: "Cycle de Congés", value: contractType === 'TYPE_A' ? 'Type A (30 jours / 6 mois)' : 'Type B (30 jours / 12 mois)', icon: <BadgeCheck className="w-3.5 h-3.5 text-stone-400" /> }
+        ]}
+        onConfirm={handleExecuteSave}
+        onCancel={() => setShowSaveConfirmModal(false)}
+      />
+
+      {/* Cancel / Discard Unsaved Changes Confirmation Modal */}
+      <ConfirmModal
+        isOpen={showCancelConfirmModal}
+        title="Modifications non enregistrées"
+        subtitle="Vous avez des informations saisies ou modifiées dans le formulaire."
+        type="warning"
+        confirmLabel="Quitter sans enregistrer"
+        cancelLabel="Continuer la saisie"
+        warningMessage="Toutes les modifications apportées depuis l'ouverture du formulaire seront perdues si vous quittez maintenant."
+        onConfirm={() => {
+          setShowCancelConfirmModal(false);
+          setIsFormOpen(false);
+          setIsSubmittedAttempt(false);
+          setEditingEmployee(null);
+        }}
+        onCancel={() => setShowCancelConfirmModal(false)}
+      />
+
+      {/* Delete Employee Confirmation Modal */}
+      {employeeToDelete && (
+        <ConfirmModal
+          isOpen={Boolean(employeeToDelete)}
+          title={`Supprimer définitivement ${employeeToDelete.name} ?`}
+          subtitle={`Cette action supprimera également tout l'historique des congés associés à cet employé.`}
+          type="danger"
+          confirmLabel="Oui, supprimer définitivement"
+          cancelLabel="Annuler"
+          warningMessage="Attention : Cette suppression sera répercutée immédiatement dans Cloud Firestore et tous les appareils connectés."
+          summaryItems={[
+            { label: "N° Matricule", value: employeeToDelete.idNumber || 'SANS-MAT' },
+            { label: "Nom & Prénom", value: employeeToDelete.name },
+            { label: "Poste", value: employeeToDelete.position || 'Collaborateur' },
+            { label: "Statut", value: employeeToDelete.status }
+          ]}
+          onConfirm={() => {
+            const id = employeeToDelete.id;
+            setEmployeeToDelete(null);
+            onDeleteEmployee(id);
+          }}
+          onCancel={() => setEmployeeToDelete(null)}
+        />
       )}
 
       {/* Filter and Search Bar */}
@@ -713,15 +965,15 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({
                     </button>
                     <button
                       onClick={() => handleOpenEditForm(emp)}
-                      className="p-1.5 text-stone-500 hover:text-stone-800 hover:bg-stone-100 rounded-lg cursor-pointer"
-                      title="Modifier employé"
+                      className="p-1.5 text-stone-500 hover:text-stone-800 hover:bg-stone-100 rounded-lg cursor-pointer transition-colors"
+                      title="Modifier les données de cet employé"
                     >
                       <Edit3 className="w-4 h-4" />
                     </button>
                     <button
-                      onClick={() => onDeleteEmployee(emp.id)}
-                      className="p-1.5 text-stone-400 hover:text-red-600 hover:bg-red-50 rounded-lg cursor-pointer"
-                      title="Supprimer employé"
+                      onClick={() => setEmployeeToDelete(emp)}
+                      className="p-1.5 text-stone-400 hover:text-red-600 hover:bg-red-50 rounded-lg cursor-pointer transition-colors"
+                      title="Supprimer cet employé"
                     >
                       <Trash2 className="w-4 h-4" />
                     </button>
@@ -736,10 +988,10 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({
       {/* Employee Detail Modal */}
       {selectedEmployee && selectedEmpStats && (
         <div className="fixed inset-0 bg-stone-900/50 backdrop-blur-xs flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-2xl border border-stone-200 shadow-2xl max-w-2xl w-full p-6 space-y-6 max-h-[90vh] overflow-y-auto animate-in fade-in zoom-in-95 duration-150">
+          <div className="bg-white rounded-3xl border border-stone-200 shadow-2xl max-w-2xl w-full p-6 space-y-6 max-h-[90vh] overflow-y-auto animate-in fade-in zoom-in-95 duration-150">
             <div className="flex items-center justify-between border-b border-stone-100 pb-4">
               <div className="flex items-center gap-3">
-                <div className={`w-12 h-12 rounded-xl text-white font-bold text-base flex items-center justify-center ${
+                <div className={`w-12 h-12 rounded-2xl text-white font-bold text-base flex items-center justify-center ${
                   selectedEmployee.status === 'EXPAT' ? 'bg-purple-900' : 'bg-stone-900'
                 }`}>
                   {selectedEmployee.name.charAt(0)}
@@ -760,7 +1012,7 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({
               </div>
               <button
                 onClick={() => setSelectedEmployeeDetailId(null)}
-                className="text-stone-400 hover:text-stone-700 p-1.5 rounded-lg cursor-pointer"
+                className="text-stone-400 hover:text-stone-700 p-1.5 rounded-full hover:bg-stone-100 cursor-pointer"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -768,17 +1020,17 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({
 
             {/* Solde & Stats Grid */}
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-              <div className="bg-stone-50 p-3.5 rounded-xl border border-stone-200">
+              <div className="bg-stone-50 p-3.5 rounded-2xl border border-stone-200">
                 <p className="text-2xs font-bold text-stone-400 uppercase">Jours Acquis Total</p>
                 <p className="text-lg font-bold text-emerald-700 mt-1 font-mono">+{selectedEmpStats.totalAccruedDays.toFixed(1)} j</p>
               </div>
 
-              <div className="bg-stone-50 p-3.5 rounded-xl border border-stone-200">
+              <div className="bg-stone-50 p-3.5 rounded-2xl border border-stone-200">
                 <p className="text-2xs font-bold text-stone-400 uppercase">Congés Payés Pris</p>
                 <p className="text-lg font-bold text-stone-900 mt-1 font-mono">{selectedEmpStats.totalLeaveTakenDays} j</p>
               </div>
 
-              <div className={`p-3.5 rounded-xl border ${selectedEmpStats.isDebt ? 'bg-red-50 border-red-200' : 'bg-emerald-50 border-emerald-200'}`}>
+              <div className={`p-3.5 rounded-2xl border ${selectedEmpStats.isDebt ? 'bg-red-50 border-red-200' : 'bg-emerald-50 border-emerald-200'}`}>
                 <p className="text-2xs font-bold uppercase text-stone-500">Solde Actuel (Solde)</p>
                 <p className={`text-lg font-bold mt-1 font-mono ${selectedEmpStats.isDebt ? 'text-red-700' : 'text-emerald-700'}`}>
                   {selectedEmpStats.isDebt ? `-${selectedEmpStats.debtDays.toFixed(1)} j` : `+${selectedEmpStats.balanceDays.toFixed(1)} j`}
@@ -788,7 +1040,7 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({
 
             {/* Indication if employee passed allocated days */}
             {selectedEmpStats.isDebt && (
-              <div className="bg-red-50 border border-red-200 p-4 rounded-xl text-xs space-y-1.5">
+              <div className="bg-red-50 border border-red-200 p-4 rounded-2xl text-xs space-y-1.5">
                 <div className="flex items-center gap-2 font-bold text-red-900">
                   <AlertTriangle className="w-4 h-4 text-red-600 shrink-0" />
                   <span>Dépassement des Jours Acquis (+{selectedEmpStats.exceededDays.toFixed(1)} jours en avance)</span>
@@ -813,7 +1065,7 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({
                     setSelectedEmployeeDetailId(null);
                     onOpenLeaveModal(empId);
                   }}
-                  className="inline-flex items-center gap-1 text-xs font-bold bg-amber-400 hover:bg-amber-300 text-stone-950 px-3 py-1.5 rounded-lg transition-all shadow-2xs cursor-pointer active:scale-98"
+                  className="inline-flex items-center gap-1 text-xs font-bold bg-amber-400 hover:bg-amber-300 text-stone-950 px-3 py-1.5 rounded-xl transition-all shadow-2xs cursor-pointer active:scale-98"
                 >
                   <Plus className="w-3.5 h-3.5" />
                   Saisir Congé
@@ -825,7 +1077,7 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({
               ) : (
                 <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
                   {selectedEmpRecords.map((rec) => (
-                    <div key={rec.id} className="p-3 bg-stone-50 rounded-xl border border-stone-200 text-xs flex justify-between items-center">
+                    <div key={rec.id} className="p-3 bg-stone-50 rounded-2xl border border-stone-200 text-xs flex justify-between items-center">
                       <div>
                         <div className="flex items-center gap-2">
                           <span className="font-bold text-stone-900">{LEAVE_TYPE_LABELS[rec.leaveType]}</span>

@@ -9,10 +9,12 @@ import {
   Download,
   Globe,
   Building2,
-  Filter
+  Filter,
+  Clock
 } from 'lucide-react';
 import { Employee, EmployeeStatus, LeaveRecord, LeaveType } from '../types';
 import { LEAVE_TYPE_LABELS, LEAVE_TYPE_COLORS } from '../utils/vacationCalc';
+import { ConfirmModal } from './ConfirmModal';
 
 interface LedgerHistoryProps {
   employees: Employee[];
@@ -31,6 +33,9 @@ export const LedgerHistory: React.FC<LedgerHistoryProps> = ({
   const [selectedStatus, setSelectedStatus] = useState<'ALL' | EmployeeStatus>('ALL');
   const [selectedLeaveType, setSelectedLeaveType] = useState<string>('ALL');
   const [searchTerm, setSearchTerm] = useState<string>('');
+
+  // Confirmation modal for deleting records
+  const [recordToDelete, setRecordToDelete] = useState<{ id: string; record: LeaveRecord; emp?: Employee } | null>(null);
 
   const employeeMap = new Map<string, Employee>();
   employees.forEach((emp) => employeeMap.set(emp.id, emp));
@@ -112,6 +117,12 @@ export const LedgerHistory: React.FC<LedgerHistoryProps> = ({
     link.click();
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
+  };
+
+  const handleExecuteDelete = () => {
+    if (!recordToDelete) return;
+    onDeleteLeaveRecord(recordToDelete.id);
+    setRecordToDelete(null);
   };
 
   return (
@@ -329,11 +340,7 @@ export const LedgerHistory: React.FC<LedgerHistoryProps> = ({
                       {/* Actions */}
                       <td className="py-4 px-6 text-right">
                         <button
-                          onClick={() => {
-                            if (window.confirm('Êtes-vous sûr de vouloir supprimer cette saisie d\'absence ?')) {
-                              onDeleteLeaveRecord(rec.id);
-                            }
-                          }}
+                          onClick={() => setRecordToDelete({ id: rec.id, record: rec, emp })}
                           className="p-1.5 text-stone-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
                           title="Supprimer la saisie"
                         >
@@ -348,6 +355,42 @@ export const LedgerHistory: React.FC<LedgerHistoryProps> = ({
           </div>
         )}
       </div>
+
+      {/* Delete Leave Record Confirmation Modal */}
+      {recordToDelete && (
+        <ConfirmModal
+          isOpen={Boolean(recordToDelete)}
+          title="Supprimer cette saisie d'absence ?"
+          subtitle="Cette action supprimera l'enregistrement du journal et restituera les jours au solde de l'employé."
+          type="danger"
+          confirmLabel="Oui, supprimer la saisie"
+          cancelLabel="Annuler"
+          summaryItems={[
+            { 
+              label: "Collaborateur", 
+              value: recordToDelete.emp ? `[${recordToDelete.emp.idNumber || 'SANS-MAT'}] ${recordToDelete.emp.name}` : "Inconnu",
+              icon: <Building2 className="w-3.5 h-3.5 text-stone-400" />
+            },
+            { 
+              label: "Type de Congé", 
+              value: LEAVE_TYPE_LABELS[recordToDelete.record.leaveType] || recordToDelete.record.leaveType,
+              icon: <FileText className="w-3.5 h-3.5 text-stone-400" />
+            },
+            { 
+              label: "Période", 
+              value: `Du ${new Date(recordToDelete.record.startDate).toLocaleDateString('fr-FR')} au ${new Date(recordToDelete.record.endDate).toLocaleDateString('fr-FR')}`,
+              icon: <Calendar className="w-3.5 h-3.5 text-stone-400" />
+            },
+            { 
+              label: "Durée", 
+              value: `${recordToDelete.record.daysCount} jour(s)`,
+              icon: <Clock className="w-3.5 h-3.5 text-stone-400" />
+            }
+          ]}
+          onConfirm={handleExecuteDelete}
+          onCancel={() => setRecordToDelete(null)}
+        />
+      )}
     </div>
   );
 };

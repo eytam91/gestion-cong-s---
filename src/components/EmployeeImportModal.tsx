@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import Papa from 'papaparse';
 import { Employee, EmployeeStatus, ContractType } from '../types';
+import { ConfirmModal } from './ConfirmModal';
 
 interface EmployeeImportModalProps {
   isOpen: boolean;
@@ -48,9 +49,12 @@ export const EmployeeImportModal: React.FC<EmployeeImportModalProps> = ({
   const [parsedRows, setParsedRows] = useState<ParsedEmployeeRow[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [importMode, setImportMode] = useState<'append' | 'overwrite'>('append');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Confirmation modal states
+  const [showImportConfirmModal, setShowImportConfirmModal] = useState(false);
+  const [showCancelConfirmModal, setShowCancelConfirmModal] = useState(false);
 
   if (!isOpen) return null;
 
@@ -115,7 +119,6 @@ export const EmployeeImportModal: React.FC<EmployeeImportModalProps> = ({
         const rows: ParsedEmployeeRow[] = [];
 
         results.data.forEach((row: any, index: number) => {
-          // Normalize column headers matching
           const keys = Object.keys(row);
           
           const findVal = (possibleKeys: string[]): string => {
@@ -206,12 +209,19 @@ export const EmployeeImportModal: React.FC<EmployeeImportModalProps> = ({
     URL.revokeObjectURL(url);
   };
 
-  const handleConfirmImport = async () => {
+  const handlePreImport = () => {
     const validRows = parsedRows.filter((r) => r.isValid);
     if (validRows.length === 0) {
       alert("Aucun employé valide à importer.");
       return;
     }
+    setShowImportConfirmModal(true);
+  };
+
+  const handleExecuteImport = async () => {
+    setShowImportConfirmModal(false);
+    const validRows = parsedRows.filter((r) => r.isValid);
+    if (validRows.length === 0) return;
 
     setIsSubmitting(true);
     try {
@@ -240,222 +250,265 @@ export const EmployeeImportModal: React.FC<EmployeeImportModalProps> = ({
   const localCount = parsedRows.filter((r) => r.isValid && r.status === 'LOCAL').length;
   const expatCount = parsedRows.filter((r) => r.isValid && r.status === 'EXPAT').length;
 
+  const handleRequestClose = () => {
+    if (parsedRows.length > 0) {
+      setShowCancelConfirmModal(true);
+    } else {
+      onClose();
+    }
+  };
+
   return (
-    <div className="fixed inset-0 bg-stone-900/50 backdrop-blur-xs flex items-center justify-center p-4 z-50">
-      <div className="bg-white rounded-2xl border border-stone-200 shadow-2xl max-w-4xl w-full p-6 space-y-6 max-h-[92vh] flex flex-col animate-in fade-in zoom-in-95 duration-150">
-        
-        {/* Header */}
-        <div className="flex items-center justify-between border-b border-stone-100 pb-4 shrink-0">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-stone-900 text-white flex items-center justify-center shadow-xs">
-              <FileSpreadsheet className="w-5 h-5 text-amber-400" />
-            </div>
-            <div>
-              <h3 className="text-lg font-bold text-stone-900 flex items-center gap-2">
-                Importer la Liste des Employés
-              </h3>
-              <p className="text-xs text-stone-500">
-                Importez vos collaborateurs avec leur Matricule, Poste, Statut (Local / Expatrié) et Contrat depuis Excel / CSV.
-              </p>
-            </div>
-          </div>
-          <button
-            onClick={onClose}
-            className="text-stone-400 hover:text-stone-700 p-1.5 rounded-lg transition-colors cursor-pointer"
-          >
-            <X className="w-5 h-5" />
-          </button>
-        </div>
-
-        {/* Modal Body */}
-        <div className="space-y-5 overflow-y-auto flex-1 pr-1">
-
-          {/* Template Download & Guide Banner */}
-          <div className="bg-amber-50/70 border border-amber-200/80 rounded-xl p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 text-xs">
-            <div className="flex items-start gap-3">
-              <HelpCircle className="w-5 h-5 text-amber-700 shrink-0 mt-0.5" />
+    <>
+      <div className="fixed inset-0 bg-stone-900/50 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+        <div className="bg-white rounded-2xl border border-stone-200 shadow-2xl max-w-4xl w-full p-6 space-y-6 max-h-[92vh] flex flex-col animate-in fade-in zoom-in-95 duration-150">
+          
+          {/* Header */}
+          <div className="flex items-center justify-between border-b border-stone-100 pb-4 shrink-0">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-stone-900 text-white flex items-center justify-center shadow-xs">
+                <FileSpreadsheet className="w-5 h-5 text-amber-400" />
+              </div>
               <div>
-                <p className="font-bold text-amber-950">Besoin du format exact accepté par l'application ?</p>
-                <p className="text-amber-800 mt-0.5">
-                  Téléchargez notre modèle CSV prêt à l'emploi avec toutes les colonnes requises (Matricule, Nom, Poste, Statut, Date d'embauche, Contrat).
+                <h3 className="text-lg font-bold text-stone-900 flex items-center gap-2">
+                  Importer la Liste des Employés
+                </h3>
+                <p className="text-xs text-stone-500">
+                  Importez vos collaborateurs avec leur Matricule, Poste, Statut (Local / Expatrié) et Contrat depuis Excel / CSV.
                 </p>
               </div>
             </div>
             <button
-              type="button"
-              onClick={handleDownloadTemplate}
-              className="inline-flex items-center gap-1.5 bg-white hover:bg-amber-100 text-amber-950 font-bold px-3.5 py-2 rounded-xl border border-amber-300 shadow-2xs transition-all cursor-pointer shrink-0 active:scale-98"
+              onClick={handleRequestClose}
+              className="text-stone-400 hover:text-stone-700 p-1.5 rounded-lg transition-colors cursor-pointer"
             >
-              <Download className="w-4 h-4 text-amber-700" />
-              <span>Télécharger le Modèle</span>
+              <X className="w-5 h-5" />
             </button>
           </div>
 
-          {/* Dropzone Upload */}
-          <div
-            onDragOver={(e) => e.preventDefault()}
-            onDrop={handleDrop}
-            onClick={() => fileInputRef.current?.click()}
-            className="border-2 border-dashed border-stone-300 hover:border-stone-500 bg-stone-50/60 hover:bg-stone-50 rounded-2xl p-6 text-center cursor-pointer transition-all flex flex-col items-center justify-center gap-2 group"
-          >
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept=".csv,.txt,.tsv"
-              onChange={handleFileChange}
-              className="hidden"
-            />
-            <div className="w-12 h-12 rounded-2xl bg-white shadow-2xs border border-stone-200 flex items-center justify-center text-stone-700 group-hover:scale-105 transition-transform">
-              <UploadCloud className="w-6 h-6 text-amber-600" />
+          {/* Modal Body */}
+          <div className="space-y-5 overflow-y-auto flex-1 pr-1">
+
+            {/* Template Download & Guide Banner */}
+            <div className="bg-amber-50/70 border border-amber-200/80 rounded-xl p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 text-xs">
+              <div className="flex items-start gap-3">
+                <HelpCircle className="w-5 h-5 text-amber-700 shrink-0 mt-0.5" />
+                <div>
+                  <p className="font-bold text-amber-950">Besoin du format exact accepté par l'application ?</p>
+                  <p className="text-amber-800 mt-0.5">
+                    Téléchargez notre modèle CSV prêt à l'emploi avec toutes les colonnes requises (Matricule, Nom, Poste, Statut, Date d'embauche, Contrat).
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={handleDownloadTemplate}
+                className="inline-flex items-center gap-1.5 bg-white hover:bg-amber-100 text-amber-950 font-bold px-3.5 py-2 rounded-xl border border-amber-300 shadow-2xs transition-all cursor-pointer shrink-0 active:scale-98"
+              >
+                <Download className="w-4 h-4 text-amber-700" />
+                <span>Télécharger le Modèle</span>
+              </button>
             </div>
-            <div>
-              <p className="text-sm font-bold text-stone-900">
-                {file ? file.name : "Cliquez ou glissez-déposez votre fichier Excel / CSV ici"}
-              </p>
-              <p className="text-xs text-stone-500 mt-0.5">
-                Formats acceptés : CSV avec séparateurs virgule (,), point-virgule (;), ou tabulation
-              </p>
+
+            {/* Dropzone Upload */}
+            <div
+              onDragOver={(e) => e.preventDefault()}
+              onDrop={handleDrop}
+              onClick={() => fileInputRef.current?.click()}
+              className="border-2 border-dashed border-stone-300 hover:border-stone-500 bg-stone-50/60 hover:bg-stone-50 rounded-2xl p-6 text-center cursor-pointer transition-all flex flex-col items-center justify-center gap-2 group"
+            >
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".csv,.txt,.tsv"
+                onChange={handleFileChange}
+                className="hidden"
+              />
+              <div className="w-12 h-12 rounded-2xl bg-white shadow-2xs border border-stone-200 flex items-center justify-center text-stone-700 group-hover:scale-105 transition-transform">
+                <UploadCloud className="w-6 h-6 text-amber-600" />
+              </div>
+              <div>
+                <p className="text-sm font-bold text-stone-900">
+                  {file ? file.name : "Cliquez ou glissez-déposez votre fichier Excel / CSV ici"}
+                </p>
+                <p className="text-xs text-stone-500 mt-0.5">
+                  Formats acceptés : CSV avec séparateurs virgule (,), point-virgule (;), ou tabulation
+                </p>
+              </div>
             </div>
+
+            {/* Error Message */}
+            {errorMsg && (
+              <div className="p-3.5 bg-red-50 border border-red-200 rounded-xl text-xs text-red-800 font-semibold flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4 text-red-600 shrink-0" />
+                <span>{errorMsg}</span>
+              </div>
+            )}
+
+            {/* Parsed Preview Table */}
+            {parsedRows.length > 0 && (
+              <div className="space-y-3">
+                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-stone-100 pb-2">
+                  <div className="flex items-center gap-2">
+                    <FileCheck className="w-4 h-4 text-emerald-600" />
+                    <h4 className="text-sm font-bold text-stone-900">
+                      Aperçu de la Liste Détectée ({parsedRows.length} lignes)
+                    </h4>
+                  </div>
+
+                  <div className="flex items-center gap-2 text-2xs">
+                    <span className="bg-emerald-50 text-emerald-800 font-bold px-2 py-0.5 rounded border border-emerald-200">
+                      {validCount} Valide(s)
+                    </span>
+                    <span className="bg-teal-50 text-teal-800 font-bold px-2 py-0.5 rounded border border-teal-200">
+                      {localCount} Personnel Local
+                    </span>
+                    <span className="bg-purple-50 text-purple-800 font-bold px-2 py-0.5 rounded border border-purple-200">
+                      {expatCount} Expatrié(s)
+                    </span>
+                  </div>
+                </div>
+
+                <div className="border border-stone-200 rounded-xl overflow-hidden max-h-60 overflow-y-auto">
+                  <table className="w-full text-left text-xs border-collapse">
+                    <thead className="bg-stone-100 text-stone-600 font-bold sticky top-0 uppercase text-[10px] tracking-wider">
+                      <tr>
+                        <th className="py-2.5 px-3">Statut Valid.</th>
+                        <th className="py-2.5 px-3">N° Matricule</th>
+                        <th className="py-2.5 px-3">Nom & Prénom</th>
+                        <th className="py-2.5 px-3">Poste / Fonction</th>
+                        <th className="py-2.5 px-3">Statut</th>
+                        <th className="py-2.5 px-3">Date Embauche</th>
+                        <th className="py-2.5 px-3">Contrat</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-stone-100">
+                      {parsedRows.map((row, idx) => (
+                        <tr key={idx} className={row.isValid ? 'hover:bg-stone-50' : 'bg-red-50/50'}>
+                          <td className="py-2 px-3">
+                            {row.isValid ? (
+                              <span className="inline-flex items-center gap-1 text-emerald-700 font-bold">
+                                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                                OK
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 text-red-700 font-bold" title={row.validationErrors.join(', ')}>
+                                <AlertTriangle className="w-3.5 h-3.5 text-red-600" />
+                                Erreur
+                              </span>
+                            )}
+                          </td>
+                          <td className="py-2 px-3 font-mono font-bold text-stone-900">
+                            {row.idNumber}
+                          </td>
+                          <td className="py-2 px-3 font-semibold text-stone-900">
+                            {row.name || <span className="text-red-500 italic">Non renseigné</span>}
+                          </td>
+                          <td className="py-2 px-3 text-stone-600">
+                            {row.position}
+                          </td>
+                          <td className="py-2 px-3">
+                            {row.status === 'EXPAT' ? (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-purple-100 text-purple-900 border border-purple-300">
+                                <Globe className="w-3 h-3 text-purple-600" />
+                                EXPAT
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-teal-100 text-teal-900 border border-teal-300">
+                                <Building2 className="w-3 h-3 text-teal-600" />
+                                LOCAL
+                              </span>
+                            )}
+                          </td>
+                          <td className="py-2 px-3 font-mono text-stone-700">
+                            {row.hireDate}
+                          </td>
+                          <td className="py-2 px-3">
+                            {row.contractType === 'TYPE_A' ? (
+                              <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-50 text-emerald-800 border border-emerald-200">
+                                TYPE_A (6m)
+                              </span>
+                            ) : (
+                              <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-blue-50 text-blue-800 border border-blue-200">
+                                TYPE_B (1an)
+                              </span>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
           </div>
 
-          {/* Error Message */}
-          {errorMsg && (
-            <div className="p-3.5 bg-red-50 border border-red-200 rounded-xl text-xs text-red-800 font-semibold flex items-center gap-2">
-              <AlertTriangle className="w-4 h-4 text-red-600 shrink-0" />
-              <span>{errorMsg}</span>
-            </div>
-          )}
+          {/* Footer Actions */}
+          <div className="flex items-center justify-between border-t border-stone-100 pt-4 shrink-0">
+            <button
+              type="button"
+              onClick={handleRequestClose}
+              className="px-4 py-2 text-xs font-semibold text-stone-600 hover:text-stone-900 hover:bg-stone-100 rounded-xl transition-colors cursor-pointer"
+            >
+              Annuler
+            </button>
 
-          {/* Parsed Preview Table */}
-          {parsedRows.length > 0 && (
-            <div className="space-y-3">
-              <div className="flex flex-wrap items-center justify-between gap-2 border-b border-stone-100 pb-2">
-                <div className="flex items-center gap-2">
-                  <FileCheck className="w-4 h-4 text-emerald-600" />
-                  <h4 className="text-sm font-bold text-stone-900">
-                    Aperçu de la Liste Détectée ({parsedRows.length} lignes)
-                  </h4>
-                </div>
-
-                <div className="flex items-center gap-2 text-2xs">
-                  <span className="bg-emerald-50 text-emerald-800 font-bold px-2 py-0.5 rounded border border-emerald-200">
-                    {validCount} Valide(s)
-                  </span>
-                  <span className="bg-teal-50 text-teal-800 font-bold px-2 py-0.5 rounded border border-teal-200">
-                    {localCount} Personnel Local
-                  </span>
-                  <span className="bg-purple-50 text-purple-800 font-bold px-2 py-0.5 rounded border border-purple-200">
-                    {expatCount} Expatrié(s)
-                  </span>
-                </div>
-              </div>
-
-              <div className="border border-stone-200 rounded-xl overflow-hidden max-h-60 overflow-y-auto">
-                <table className="w-full text-left text-xs border-collapse">
-                  <thead className="bg-stone-100 text-stone-600 font-bold sticky top-0 uppercase text-[10px] tracking-wider">
-                    <tr>
-                      <th className="py-2.5 px-3">Statut Valid.</th>
-                      <th className="py-2.5 px-3">N° Matricule</th>
-                      <th className="py-2.5 px-3">Nom & Prénom</th>
-                      <th className="py-2.5 px-3">Poste / Fonction</th>
-                      <th className="py-2.5 px-3">Statut</th>
-                      <th className="py-2.5 px-3">Date Embauche</th>
-                      <th className="py-2.5 px-3">Contrat</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-stone-100">
-                    {parsedRows.map((row, idx) => (
-                      <tr key={idx} className={row.isValid ? 'hover:bg-stone-50' : 'bg-red-50/50'}>
-                        <td className="py-2 px-3">
-                          {row.isValid ? (
-                            <span className="inline-flex items-center gap-1 text-emerald-700 font-bold">
-                              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                              OK
-                            </span>
-                          ) : (
-                            <span className="inline-flex items-center gap-1 text-red-700 font-bold" title={row.validationErrors.join(', ')}>
-                              <AlertTriangle className="w-3.5 h-3.5 text-red-600" />
-                              Erreur
-                            </span>
-                          )}
-                        </td>
-                        <td className="py-2 px-3 font-mono font-bold text-stone-900">
-                          {row.idNumber}
-                        </td>
-                        <td className="py-2 px-3 font-semibold text-stone-900">
-                          {row.name || <span className="text-red-500 italic">Non renseigné</span>}
-                        </td>
-                        <td className="py-2 px-3 text-stone-600">
-                          {row.position}
-                        </td>
-                        <td className="py-2 px-3">
-                          {row.status === 'EXPAT' ? (
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-purple-100 text-purple-900 border border-purple-300">
-                              <Globe className="w-3 h-3 text-purple-600" />
-                              EXPAT
-                            </span>
-                          ) : (
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-teal-100 text-teal-900 border border-teal-300">
-                              <Building2 className="w-3 h-3 text-teal-600" />
-                              LOCAL
-                            </span>
-                          )}
-                        </td>
-                        <td className="py-2 px-3 font-mono text-stone-700">
-                          {row.hireDate}
-                        </td>
-                        <td className="py-2 px-3">
-                          {row.contractType === 'TYPE_A' ? (
-                            <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-50 text-emerald-800 border border-emerald-200">
-                              TYPE_A (6m)
-                            </span>
-                          ) : (
-                            <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-blue-50 text-blue-800 border border-blue-200">
-                              TYPE_B (1an)
-                            </span>
-                          )}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          )}
+            <button
+              type="button"
+              disabled={validCount === 0 || isSubmitting || isProcessing}
+              onClick={handlePreImport}
+              className="inline-flex items-center gap-2 bg-stone-900 hover:bg-stone-800 disabled:bg-stone-300 text-white text-xs font-bold px-5 py-2.5 rounded-xl shadow-xs transition-all cursor-pointer disabled:cursor-not-allowed active:scale-98"
+            >
+              {isSubmitting ? (
+                <>
+                  <RefreshCw className="w-4 h-4 animate-spin text-amber-400" />
+                  <span>Importation dans Firestore...</span>
+                </>
+              ) : (
+                <>
+                  <BadgeCheck className="w-4 h-4 text-amber-400" />
+                  <span>Importer {validCount} Employé(s) dans Firestore</span>
+                </>
+              )}
+            </button>
+          </div>
 
         </div>
-
-        {/* Footer Actions */}
-        <div className="flex items-center justify-between border-t border-stone-100 pt-4 shrink-0">
-          <button
-            type="button"
-            onClick={onClose}
-            className="px-4 py-2 text-xs font-semibold text-stone-600 hover:text-stone-900 hover:bg-stone-100 rounded-xl transition-colors cursor-pointer"
-          >
-            Annuler
-          </button>
-
-          <button
-            type="button"
-            disabled={validCount === 0 || isSubmitting || isProcessing}
-            onClick={handleConfirmImport}
-            className="inline-flex items-center gap-2 bg-stone-900 hover:bg-stone-800 disabled:bg-stone-300 text-white text-xs font-bold px-5 py-2.5 rounded-xl shadow-xs transition-all cursor-pointer disabled:cursor-not-allowed active:scale-98"
-          >
-            {isSubmitting ? (
-              <>
-                <RefreshCw className="w-4 h-4 animate-spin text-amber-400" />
-                <span>Importation dans Cloud SQL...</span>
-              </>
-            ) : (
-              <>
-                <BadgeCheck className="w-4 h-4 text-amber-400" />
-                <span>Importer {validCount} Employé(s) dans Cloud SQL</span>
-              </>
-            )}
-          </button>
-        </div>
-
       </div>
-    </div>
+
+      {/* Confirmation Modal before Import */}
+      <ConfirmModal
+        isOpen={showImportConfirmModal}
+        title={`Importer ${validCount} collaborateur(s) dans Firestore ?`}
+        subtitle="Ces employés seront ajoutés à la base de données et calculés automatiquement."
+        type="save"
+        confirmLabel={`Confirmer l'import (${validCount} employés)`}
+        cancelLabel="Vérifier la liste"
+        summaryItems={[
+          { label: "Total employés valides", value: `${validCount}` },
+          { label: "Personnel Local (LOCAL)", value: `${localCount}` },
+          { label: "Expatriés (EXPAT)", value: `${expatCount}` }
+        ]}
+        onConfirm={handleExecuteImport}
+        onCancel={() => setShowImportConfirmModal(false)}
+      />
+
+      {/* Confirmation Modal when Cancelling */}
+      <ConfirmModal
+        isOpen={showCancelConfirmModal}
+        title="Abandonner l'importation ?"
+        subtitle="Le fichier analysé contient des collaborateurs en attente d'importation."
+        type="warning"
+        confirmLabel="Quitter sans importer"
+        cancelLabel="Poursuivre l'import"
+        warningMessage="Les lignes analysées ne seront pas ajoutées."
+        onConfirm={() => {
+          setShowCancelConfirmModal(false);
+          onClose();
+        }}
+        onCancel={() => setShowCancelConfirmModal(false)}
+      />
+    </>
   );
 };

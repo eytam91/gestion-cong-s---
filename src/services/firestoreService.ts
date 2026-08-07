@@ -25,9 +25,12 @@ export interface DbUser {
 }
 
 export const DEFAULT_USERS: DbUser[] = [
-  { uid: 'local-admin', email: 'admin@local.app', name: 'Administrateur (Admin)', role: 'ADMIN', password: 'admin123', createdAt: '2026-01-01T00:00:00.000Z' },
-  { uid: 'local-user1', email: 'user1@local.app', name: 'Gestionnaire RH 1', role: 'HR Manager', password: 'user123', createdAt: '2026-01-01T00:00:00.000Z' },
-  { uid: 'local-user2', email: 'user2@local.app', name: 'Gestionnaire RH 2', role: 'HR Manager', password: 'user123', createdAt: '2026-01-01T00:00:00.000Z' },
+  { uid: 'local-admin', email: 'admin@local.app', name: 'Administrateur (admin)', role: 'ADMIN', password: 'admin123', createdAt: '2026-01-01T00:00:00.000Z' },
+  { uid: 'local-hrbata', email: 'hrbata@local.app', name: 'RH Bata (HRbata)', role: 'HR Manager', password: 'hrbata123', createdAt: '2026-01-01T00:00:00.000Z' },
+  { uid: 'local-hrmalabo', email: 'hrmalabo@local.app', name: 'RH Malabo (hrmalabo)', role: 'HR Manager', password: 'hrmalabo123', createdAt: '2026-01-01T00:00:00.000Z' },
+  { uid: 'local-parkmalabo', email: 'parkmalabo@local.app', name: 'Parc Malabo (parkmalabo)', role: 'HR Manager', password: 'parkmalabo123', createdAt: '2026-01-01T00:00:00.000Z' },
+  { uid: 'local-parkbata', email: 'parkbata@local.app', name: 'Parc Bata (parkbata)', role: 'HR Manager', password: 'parkbata123', createdAt: '2026-01-01T00:00:00.000Z' },
+  { uid: 'local-oabdellah', email: 'oabdellah@local.app', name: 'O. Abdellah (oabdellah)', role: 'HR Manager', password: 'oabdellah123', createdAt: '2026-01-01T00:00:00.000Z' },
 ];
 
 /**
@@ -178,10 +181,31 @@ export async function fetchUsers(): Promise<DbUser[]> {
     const snap = await getDocs(collection(db, USERS_COLL));
     const list: DbUser[] = [];
     snap.forEach((d) => list.push(d.data() as DbUser));
-    if (list.length === 0) {
-      return DEFAULT_USERS;
+    
+    // Merge any missing default users so that all configured accounts are always available
+    const mergedList = [...list];
+    const batch = writeBatch(db);
+    let hasNewSeeds = false;
+
+    for (const def of DEFAULT_USERS) {
+      const exists = mergedList.some(
+        (u) => 
+          u.uid === def.uid || 
+          u.email.toLowerCase() === def.email.toLowerCase() ||
+          u.name.toLowerCase().includes(def.uid.replace('local-', '').toLowerCase())
+      );
+      if (!exists) {
+        mergedList.push(def);
+        batch.set(doc(db, USERS_COLL, def.uid), def);
+        hasNewSeeds = true;
+      }
     }
-    return list;
+
+    if (hasNewSeeds) {
+      await batch.commit().catch((e) => console.warn('Seeding default users failed:', e));
+    }
+
+    return mergedList;
   } catch (err) {
     console.warn('Failed to fetch remote users, returning default users:', err);
     return DEFAULT_USERS;

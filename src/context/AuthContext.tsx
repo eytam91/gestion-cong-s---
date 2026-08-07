@@ -117,15 +117,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       
       const matched = allUsers.find(
         (u) => 
-          u.uid === `local-${clean}` || 
-          u.email.toLowerCase().startsWith(clean) ||
-          u.role.toLowerCase() === clean
-      );
+          u.uid.toLowerCase() === `local-${clean}` || 
+          u.email.toLowerCase() === clean ||
+          u.email.toLowerCase() === `${clean}@local.app` ||
+          u.name.toLowerCase().includes(clean)
+      ) || DEFAULT_USERS.find(
+        (u) => 
+          u.uid.toLowerCase() === `local-${clean}` || 
+          u.email.toLowerCase() === clean ||
+          u.email.toLowerCase() === `${clean}@local.app` ||
+          u.name.toLowerCase().includes(clean)
+      ) || DEFAULT_USERS[0];
 
-      const selected = matched || DEFAULT_USERS.find((u) => u.uid.includes(clean)) || DEFAULT_USERS[0];
-      setDbUser(selected);
-      setUser({ displayName: selected.name, email: selected.email, uid: selected.uid });
-      localStorage.setItem('local_db_user', JSON.stringify(selected));
+      setDbUser(matched);
+      setUser({ displayName: matched.name, email: matched.email, uid: matched.uid });
+      localStorage.setItem('local_db_user', JSON.stringify(matched));
     } catch (err) {
       console.error('Local user switch failed:', err);
       const fallback = DEFAULT_USERS[0];
@@ -139,23 +145,41 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       const clean = emailOrUsername.trim().toLowerCase();
       const username = clean.includes('@') ? clean.split('@')[0] : clean;
+      const cleanPass = pass.trim();
       
       const allUsers = await fetchUsers();
-      const matched = allUsers.find(
+      let matched = allUsers.find(
         (u) =>
           u.email.toLowerCase() === clean ||
-          u.uid === `local-${username}` ||
+          u.uid.toLowerCase() === `local-${username}` ||
           u.email.toLowerCase() === `${username}@local.app` ||
-          (u.name && u.name.toLowerCase() === clean)
+          (u.name && u.name.toLowerCase().replace(/[\(\)]/g, '').includes(username))
       );
 
+      // Fallback search in default users
       if (!matched) {
-        // Auto-create or suggest
-        throw new Error(`Utilisateur "${emailOrUsername}" non trouvé. Utilisez "admin", "user1" ou créez un nouveau compte.`);
+        matched = DEFAULT_USERS.find(
+          (u) =>
+            u.email.toLowerCase() === clean ||
+            u.uid.toLowerCase() === `local-${username}` ||
+            u.email.toLowerCase() === `${username}@local.app` ||
+            (u.name && u.name.toLowerCase().replace(/[\(\)]/g, '').includes(username))
+        );
       }
 
-      if (matched.password && matched.password !== pass && pass !== 'demo') {
-        throw new Error('Mot de passe incorrect.');
+      if (!matched) {
+        throw new Error(
+          `Identifiant "${emailOrUsername}" non reconnu. Comptes valides : HRbata, hrmalabo, parkmalabo, parkbata, oabdellah, admin.`
+        );
+      }
+
+      if (
+        matched.password && 
+        matched.password !== cleanPass && 
+        matched.password.toLowerCase() !== cleanPass.toLowerCase() && 
+        cleanPass !== 'demo'
+      ) {
+        throw new Error(`Mot de passe incorrect pour le compte "${matched.name || emailOrUsername}".`);
       }
 
       setDbUser(matched);
