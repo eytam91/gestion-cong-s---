@@ -20,6 +20,8 @@
       "properties": {
         "id": { "type": "string", "description": "Employee ID" },
         "idNumber": { "type": "string", "description": "Matricule or ID Number" },
+        "matriculeGL": { "type": "string", "description": "Matricule GL or Company ID" },
+        "nationality": { "type": "string", "description": "Employee nationality" },
         "name": { "type": "string", "description": "Employee full name" },
         "position": { "type": "string", "description": "Job title or position" },
         "status": { "type": "string", "description": "Status (LOCAL, EXPATS, etc.)" },

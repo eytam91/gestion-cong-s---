@@ -6,6 +6,8 @@ export interface ParsedEmployeeRow {
   index: number;
   raw: Record<string, any>;
   idNumber: string;
+  matriculeGL: string;
+  nationality: string;
   name: string;
   position: string;
   status: EmployeeStatus;
@@ -233,9 +235,40 @@ export async function parseExcelOrCsvFile(
       return '';
     };
 
-    // 1. Matricule
-    const rawId = getVal(['matricule', 'idnumber', 'id', 'mat', 'code', 'numero', 'n', 'ref', 'badge', 'empid']);
+    // 1. Matricule RH
+    const rawId = getVal(['matriculerh', 'matricule', 'idnumber', 'id', 'mat', 'numero', 'n', 'ref', 'badge', 'empid']);
     const idNumber = String(rawId || '').trim() || `MAT-${String(idx + 1).padStart(4, '0')}`;
+
+    // 1b. Matricule GL (ID Société / Entreprise)
+    const rawMatriculeGL = getVal([
+      'matriculegl',
+      'matgl',
+      'idgl',
+      'gl',
+      'matriculesociete',
+      'idsociete',
+      'codesociete',
+      'companyid',
+      'idcompany',
+      'matriculeentreprise',
+      'identreprise',
+      'compagnie',
+      'codeentreprise',
+      'societeid'
+    ]);
+    const matriculeGL = String(rawMatriculeGL || '').trim();
+
+    // 1c. Nationalité
+    const rawNationality = getVal([
+      'nationalite',
+      'nationality',
+      'pays',
+      'paysorigine',
+      'citoyennete',
+      'origine',
+      'national'
+    ]);
+    const nationality = String(rawNationality || '').trim();
 
     // 2. Nom & Prénom
     let fullName = String(
@@ -264,9 +297,9 @@ export async function parseExcelOrCsvFile(
     const rawPosition = getVal(['poste', 'fonction', 'position', 'metier', 'titre', 'intitule', 'role', 'job', 'jobtitle', 'service', 'departement']);
     const position = String(rawPosition || '').trim() || 'Collaborateur RH';
 
-    // 4. Statut
-    const rawStatus = getVal(['statut', 'status', 'typepersonnel', 'nationalite', 'localexpat', 'expat', 'national', 'categorie']);
-    const status = normalizeExcelStatus(rawStatus);
+    // 4. Statut (LOCAL ou EXPAT)
+    const rawStatus = getVal(['statut', 'status', 'typepersonnel', 'localexpat', 'expat', 'categorie']);
+    const status = normalizeExcelStatus(rawStatus || (nationality && !nationality.toLowerCase().includes('locale') && !nationality.toLowerCase().includes('nationale') ? nationality : ''));
 
     // 5. Date d'embauche
     const rawHireDate = getVal(['dateembauche', 'datedembauche', 'datedentree', 'embauche', 'hiredate', 'hire_date', 'startdate', 'recrutement', 'date']);
@@ -285,7 +318,7 @@ export async function parseExcelOrCsvFile(
     }
 
     if (!idNumber) {
-      validationErrors.push('N° Matricule manquant');
+      validationErrors.push('N° Matricule RH manquant');
     }
 
     const isDuplicate = existingMatricules.has(idNumber.toLowerCase());
@@ -294,6 +327,8 @@ export async function parseExcelOrCsvFile(
       index: idx + 1,
       raw: row,
       idNumber,
+      matriculeGL,
+      nationality,
       name: fullName,
       position,
       status,
@@ -327,14 +362,16 @@ export async function parseExcelOrCsvFile(
 }
 
 /**
- * Generates and downloads a clean Excel (.xlsx) template with sample employees and proper columns.
+ * Generates and downloads a clean Excel (.xlsx) template with sample employees and proper columns including Matricule GL and Nationalité.
  */
 export function downloadEmployeeExcelTemplate() {
   const wb = XLSX.utils.book_new();
 
   const headers = [
-    'N° Matricule',
+    'N° Matricule RH',
+    'Matricule GL (ID Société)',
     'Nom & Prénom',
+    'Nationalité',
     'Poste / Fonction',
     'Statut (LOCAL ou EXPAT)',
     "Date d'Embauche (AAAA-MM-JJ)",
@@ -342,21 +379,24 @@ export function downloadEmployeeExcelTemplate() {
   ];
 
   const sampleData = [
-    ['MAT-0012', 'Karim Alami', 'Ingénieur Projet Senior', 'LOCAL', '2024-01-15', 'TYPE_A'],
-    ['MAT-0015', 'Sophie Laurent', 'Responsable Ressources Humaines', 'LOCAL', '2024-06-01', 'TYPE_A'],
-    ['MAT-0020', 'Jean-Pierre Dubois', 'Directeur des Opérations', 'EXPAT', '2025-02-10', 'TYPE_B'],
-    ['MAT-0025', 'Marc Lemoine', 'Superviseur Sécurité Site', 'EXPAT', '2024-09-01', 'TYPE_A'],
-    ['MAT-0030', 'Fatima Zahra', 'Comptable Générale', 'LOCAL', '2023-11-20', 'TYPE_B'],
-    ['MAT-0035', 'Alexandre Petit', 'Chef de Chantier', 'EXPAT', '2024-04-10', 'TYPE_A'],
-    ['MAT-0040', 'Nadia Benali', 'Assistante Administrative', 'LOCAL', '2024-07-01', 'TYPE_A'],
+    ['MAT-0012', 'GL-1042', 'Karim Alami', 'Sénégalaise', 'Ingénieur Projet Senior', 'LOCAL', '2024-01-15', 'TYPE_A'],
+    ['MAT-0015', 'GL-1045', 'Sophie Laurent', 'Française', 'Responsable Ressources Humaines', 'LOCAL', '2024-06-01', 'TYPE_A'],
+    ['MAT-0020', 'GL-1050', 'Jean-Pierre Dubois', 'Française', 'Directeur des Opérations', 'EXPAT', '2025-02-10', 'TYPE_B'],
+    ['MAT-0025', 'GL-1055', 'Marc Lemoine', 'Belge', 'Superviseur Sécurité Site', 'EXPAT', '2024-09-01', 'TYPE_A'],
+    ['MAT-0030', 'GL-1060', 'Fatima Zahra', 'Marocaine', 'Comptable Générale', 'LOCAL', '2023-11-20', 'TYPE_B'],
+    ['MAT-0035', 'GL-1065', 'Alexandre Petit', 'Française', 'Chef de Chantier', 'EXPAT', '2024-04-10', 'TYPE_A'],
+    ['MAT-0040', 'GL-1070', 'Mamadou Diallo', 'Guinéenne', 'Technicien Électromécanicien', 'LOCAL', '2024-07-01', 'TYPE_A'],
+    ['MAT-0045', 'GL-1075', 'Chen Wei', 'Chinoise', 'Expert Génie Civil', 'EXPAT', '2024-03-15', 'TYPE_B'],
   ];
 
   const ws = XLSX.utils.aoa_to_sheet([headers, ...sampleData]);
 
   // Set column widths
   ws['!cols'] = [
-    { wch: 16 }, // Matricule
+    { wch: 18 }, // Matricule RH
+    { wch: 24 }, // Matricule GL (ID Société)
     { wch: 28 }, // Nom & Prénom
+    { wch: 20 }, // Nationalité
     { wch: 32 }, // Poste
     { wch: 24 }, // Statut
     { wch: 28 }, // Date embauche
@@ -380,8 +420,10 @@ export function exportEmployeesToExcel(employees: Employee[], leaveRecords: Leav
   const wb = XLSX.utils.book_new();
 
   const headers = [
-    'N° Matricule',
+    'N° Matricule RH',
+    'Matricule GL (ID Société)',
     'Nom & Prénom',
+    'Nationalité',
     'Poste / Fonction',
     'Statut Contractuel',
     'Cycle de Congés',
@@ -405,7 +447,9 @@ export function exportEmployeesToExcel(employees: Employee[], leaveRecords: Leav
 
     return [
       emp.idNumber || '',
+      emp.matriculeGL || '',
       emp.name,
+      emp.nationality || '',
       emp.position || '',
       emp.status === 'EXPAT' ? 'Expatrié (EXPAT)' : 'Personnel Local (LOCAL)',
       emp.contractType === 'TYPE_A' ? 'Type A (30j / 6 mois)' : 'Type B (30j / 12 mois)',
@@ -424,8 +468,10 @@ export function exportEmployeesToExcel(employees: Employee[], leaveRecords: Leav
   const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
 
   ws['!cols'] = [
-    { wch: 16 }, // Matricule
+    { wch: 18 }, // Matricule RH
+    { wch: 24 }, // Matricule GL (ID Société)
     { wch: 28 }, // Nom & Prénom
+    { wch: 20 }, // Nationalité
     { wch: 28 }, // Poste
     { wch: 24 }, // Statut
     { wch: 26 }, // Cycle

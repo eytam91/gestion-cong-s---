@@ -14,7 +14,9 @@ export type LedgerEntryType = 'ACCRUAL' | 'LEAVE_TAKEN' | 'RECUPERATION';
 
 export interface Employee {
   id: string;
-  idNumber: string; // N° Matricule / ID Employé unique (ex: MAT-001)
+  idNumber: string; // N° Matricule RH unique (ex: MAT-001)
+  matriculeGL?: string; // Matricule GL / ID Société / ID Entreprise (ex: GL-0042) pour recherche rapide
+  nationality?: string; // Nationalité de l'employé (ex: Sénégalaise, Française, Marocaine...)
   name: string;
   position: string; // Intitulé du poste / fonction (ex: Ingénieur Projet, Superviseur Site)
   status: EmployeeStatus; // 'LOCAL' (Personnel Local) ou 'EXPAT' (Expatrié)

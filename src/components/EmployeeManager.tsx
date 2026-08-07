@@ -61,6 +61,8 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({
 
   // Form Fields
   const [idNumber, setIdNumber] = useState('');
+  const [matriculeGL, setMatriculeGL] = useState('');
+  const [nationality, setNationality] = useState('');
   const [name, setName] = useState('');
   const [position, setPosition] = useState('');
   const [status, setStatus] = useState<EmployeeStatus>('LOCAL');
@@ -79,6 +81,8 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({
     if (editingEmployee) {
       return (
         idNumber.trim() !== (editingEmployee.idNumber || '') ||
+        matriculeGL.trim() !== (editingEmployee.matriculeGL || '') ||
+        nationality.trim() !== (editingEmployee.nationality || '') ||
         name.trim() !== editingEmployee.name ||
         position.trim() !== (editingEmployee.position || '') ||
         status !== editingEmployee.status ||
@@ -86,12 +90,14 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({
         contractType !== editingEmployee.contractType
       );
     }
-    return Boolean(name.trim() || position.trim() || idNumber.trim());
+    return Boolean(name.trim() || position.trim() || idNumber.trim() || matriculeGL.trim() || nationality.trim());
   };
 
   const handleOpenAddForm = () => {
     setEditingEmployee(null);
     setIdNumber(`MAT-${String(employees.length + 1).padStart(4, '0')}`);
+    setMatriculeGL(`GL-${String(employees.length + 1).padStart(4, '0')}`);
+    setNationality('');
     setName('');
     setPosition('');
     setStatus('LOCAL');
@@ -105,6 +111,8 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({
   const handleOpenEditForm = (emp: Employee) => {
     setEditingEmployee(emp);
     setIdNumber(emp.idNumber || '');
+    setMatriculeGL(emp.matriculeGL || '');
+    setNationality(emp.nationality || '');
     setName(emp.name);
     setPosition(emp.position || '');
     setStatus(emp.status || 'LOCAL');

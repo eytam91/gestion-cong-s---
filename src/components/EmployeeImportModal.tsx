@@ -131,13 +131,14 @@ export const EmployeeImportModal: React.FC<EmployeeImportModalProps> = ({
 
   const handleDownloadCsvTemplate = () => {
     const csvContent = '\uFEFF' + [
-      "N° Matricule;Nom & Prénom;Poste / Fonction;Statut (LOCAL ou EXPAT);Date d'Embauche (AAAA-MM-JJ);Type de Contrat (TYPE_A ou TYPE_B)",
-      "MAT-0012;Karim Alami;Ingénieur Projet Senior;LOCAL;2024-01-15;TYPE_A",
-      "MAT-0015;Sophie Laurent;Responsable Ressources Humaines;LOCAL;2024-06-01;TYPE_A",
-      "MAT-0020;Jean-Pierre Dubois;Directeur des Opérations;EXPAT;2025-02-10;TYPE_B",
-      "MAT-0025;Marc Lemoine;Superviseur Sécurité Site;EXPAT;2024-09-01;TYPE_A",
-      "MAT-0030;Fatima Zahra;Comptable Générale;LOCAL;2023-11-20;TYPE_B",
-      "MAT-0035;Alexandre Petit;Chef de Chantier;EXPAT;2024-04-10;TYPE_A"
+      "N° Matricule RH;Matricule GL (ID Société);Nom & Prénom;Nationalité;Poste / Fonction;Statut (LOCAL ou EXPAT);Date d'Embauche (AAAA-MM-JJ);Type de Contrat (TYPE_A ou TYPE_B)",
+      "MAT-0012;GL-1042;Karim Alami;Sénégalaise;Ingénieur Projet Senior;LOCAL;2024-01-15;TYPE_A",
+      "MAT-0015;GL-1045;Sophie Laurent;Française;Responsable Ressources Humaines;LOCAL;2024-06-01;TYPE_A",
+      "MAT-0020;GL-1050;Jean-Pierre Dubois;Française;Directeur des Opérations;EXPAT;2025-02-10;TYPE_B",
+      "MAT-0025;GL-1055;Marc Lemoine;Belge;Superviseur Sécurité Site;EXPAT;2024-09-01;TYPE_A",
+      "MAT-0030;GL-1060;Fatima Zahra;Marocaine;Comptable Générale;LOCAL;2023-11-20;TYPE_B",
+      "MAT-0035;GL-1065;Alexandre Petit;Française;Chef de Chantier;EXPAT;2024-04-10;TYPE_A",
+      "MAT-0040;GL-1070;Mamadou Diallo;Guinéenne;Technicien Électromécanicien;LOCAL;2024-07-01;TYPE_A"
     ].join('\n');
 
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
@@ -176,6 +177,8 @@ export const EmployeeImportModal: React.FC<EmployeeImportModalProps> = ({
         return {
           id: existing ? existing.id : `emp-${Date.now()}-${i}`,
           idNumber: r.idNumber.trim(),
+          matriculeGL: r.matriculeGL?.trim() || '',
+          nationality: r.nationality?.trim() || '',
           name: r.name.trim(),
           position: r.position.trim() || 'Collaborateur',
           status: r.status,
@@ -248,7 +251,7 @@ export const EmployeeImportModal: React.FC<EmployeeImportModalProps> = ({
                 <div>
                   <p className="font-bold text-stone-900">Formats de fichiers et modèles préconfigurés</p>
                   <p className="text-stone-600 mt-0.5 text-2xs sm:text-xs">
-                    Colonnes détectées automatiquement : <strong>Matricule</strong>, <strong>Nom & Prénom</strong>, <strong>Poste</strong>, <strong>Statut (LOCAL/EXPAT)</strong>, <strong>Date d'embauche</strong>, <strong>Contrat (TYPE_A/TYPE_B)</strong>.
+                    Colonnes détectées automatiquement : <strong>N° Matricule RH</strong>, <strong>Matricule GL (ID Société)</strong>, <strong>Nom & Prénom</strong>, <strong>Nationalité</strong>, <strong>Poste</strong>, <strong>Statut (LOCAL/EXPAT)</strong>, <strong>Date d'embauche</strong>, <strong>Contrat (TYPE_A/TYPE_B)</strong>.
                   </p>
                 </div>
               </div>
@@ -380,8 +383,10 @@ export const EmployeeImportModal: React.FC<EmployeeImportModalProps> = ({
                     <thead className="bg-stone-100 text-stone-600 font-bold sticky top-0 uppercase text-[10px] tracking-wider z-10 shadow-2xs">
                       <tr>
                         <th className="py-2.5 px-3">Statut</th>
-                        <th className="py-2.5 px-3">N° Matricule</th>
+                        <th className="py-2.5 px-3">N° Matricule RH</th>
+                        <th className="py-2.5 px-3">Matricule GL</th>
                         <th className="py-2.5 px-3">Nom & Prénom</th>
+                        <th className="py-2.5 px-3">Nationalité</th>
                         <th className="py-2.5 px-3">Poste / Fonction</th>
                         <th className="py-2.5 px-3">Statut Contrat</th>
                         <th className="py-2.5 px-3">Date Embauche</th>
@@ -410,7 +415,7 @@ export const EmployeeImportModal: React.FC<EmployeeImportModalProps> = ({
                               )}
                             </td>
 
-                            {/* Matricule */}
+                            {/* Matricule RH */}
                             <td className="py-2 px-3 font-mono font-bold text-stone-900">
                               {isEditing ? (
                                 <input
@@ -431,6 +436,27 @@ export const EmployeeImportModal: React.FC<EmployeeImportModalProps> = ({
                               )}
                             </td>
 
+                            {/* Matricule GL */}
+                            <td className="py-2 px-3 font-mono font-bold text-stone-800">
+                              {isEditing ? (
+                                <input
+                                  type="text"
+                                  value={row.matriculeGL}
+                                  placeholder="GL-0000"
+                                  onChange={(e) => handleRowChange(idx, 'matriculeGL', e.target.value)}
+                                  className="w-24 px-1.5 py-0.5 border border-stone-300 rounded font-mono text-xs"
+                                />
+                              ) : (
+                                row.matriculeGL ? (
+                                  <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-stone-100 text-stone-800 border border-stone-200">
+                                    {row.matriculeGL}
+                                  </span>
+                                ) : (
+                                  <span className="text-stone-300 italic text-[11px]">—</span>
+                                )
+                              )}
+                            </td>
+
                             {/* Nom & Prénom */}
                             <td className="py-2 px-3 font-semibold text-stone-900">
                               {isEditing ? (
@@ -442,6 +468,28 @@ export const EmployeeImportModal: React.FC<EmployeeImportModalProps> = ({
                                 />
                               ) : (
                                 row.name || <span className="text-red-500 italic">Non renseigné</span>
+                              )}
+                            </td>
+
+                            {/* Nationalité */}
+                            <td className="py-2 px-3 text-stone-700">
+                              {isEditing ? (
+                                <input
+                                  type="text"
+                                  value={row.nationality}
+                                  placeholder="ex: Sénégalaise"
+                                  onChange={(e) => handleRowChange(idx, 'nationality', e.target.value)}
+                                  className="w-28 px-1.5 py-0.5 border border-stone-300 rounded text-xs"
+                                />
+                              ) : (
+                                row.nationality ? (
+                                  <span className="inline-flex items-center gap-1 text-[11px] font-medium text-stone-800">
+                                    <Globe className="w-3 h-3 text-stone-500" />
+                                    {row.nationality}
+                                  </span>
+                                ) : (
+                                  <span className="text-stone-300 italic text-[11px]">—</span>
+                                )
                               )}
                             </td>
 
