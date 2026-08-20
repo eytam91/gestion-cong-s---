@@ -126,15 +126,15 @@ export function normalizeExcelStatus(val: any): EmployeeStatus {
  */
 export function normalizeExcelContract(val: any): ContractType {
   if (!val) return 'TYPE_A';
-  const str = String(val).trim().toUpperCase();
+  
+  // Remove all non-alphanumeric characters (spaces, dashes, underscores) to match reliably
+  const str = String(val).trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
 
   if (
-    str.includes('TYPE_B') ||
-    str.includes('TYPE B') ||
+    str.includes('TYPEB') ||
     str.includes('ANNUEL') ||
-    str.includes('12 MOIS') ||
+    str.includes('12MOIS') ||
     str.includes('12M') ||
-    str.includes('1 AN') ||
     str.includes('1AN') ||
     str.includes('365') ||
     str === 'B'
@@ -220,11 +220,12 @@ export async function parseExcelOrCsvFile(
     const keys = Object.keys(row);
 
     const getVal = (patterns: string[]): any => {
-      for (const key of keys) {
-        const ck = cleanKey(key);
-        for (const p of patterns) {
-          const cp = cleanKey(p);
-          if (ck === cp || ck.includes(cp)) {
+      // 1. Try exact matches first, in order of preferred patterns
+      for (const p of patterns) {
+        const cp = cleanKey(p);
+        for (const key of keys) {
+          const ck = cleanKey(key);
+          if (ck === cp) {
             const val = row[key];
             if (val !== undefined && val !== null && String(val).trim() !== '') {
               return val;
@@ -232,6 +233,21 @@ export async function parseExcelOrCsvFile(
           }
         }
       }
+      
+      // 2. Try substring matches, in order of preferred patterns
+      for (const p of patterns) {
+        const cp = cleanKey(p);
+        for (const key of keys) {
+          const ck = cleanKey(key);
+          if (ck.includes(cp)) {
+            const val = row[key];
+            if (val !== undefined && val !== null && String(val).trim() !== '') {
+              return val;
+            }
+          }
+        }
+      }
+      
       return '';
     };
 
@@ -281,16 +297,18 @@ export async function parseExcelOrCsvFile(
         'employe',
         'agent',
         'personnel',
-        'nom',
-        'name',
       ]) || ''
     ).trim();
 
-    // Check if separate Nom and Prénom columns exist
-    const separateNom = String(getVal(['nomfamille', 'nom']) || '').trim();
-    const separatePrenom = String(getVal(['prenom', 'firstname']) || '').trim();
-    if (separateNom && separatePrenom && (!fullName || fullName === separateNom || fullName === separatePrenom)) {
-      fullName = `${separatePrenom} ${separateNom}`;
+    if (!fullName) {
+      const separateNom = String(getVal(['nomfamille', 'nom', 'name', 'lastname']) || '').trim();
+      const separatePrenom = String(getVal(['prenom', 'firstname', 'givenname']) || '').trim();
+      
+      if (separateNom && separatePrenom && separateNom !== separatePrenom) {
+        fullName = `${separatePrenom} ${separateNom}`;
+      } else {
+        fullName = separateNom || separatePrenom;
+      }
     }
 
     // 3. Poste / Fonction
@@ -306,7 +324,10 @@ export async function parseExcelOrCsvFile(
     const hireDate = normalizeExcelDate(rawHireDate);
 
     // 6. Type de contrat
-    const rawContract = getVal(['typecontrat', 'typedecontrat', 'contrat', 'contracttype', 'cycle', 'regime', 'formule', 'duree']);
+    const rawContract = getVal([
+      'typecontrat', 'typedecontrat', 'contracttype', 'cycle', 'regime', 'formule', 
+      'duree', 'contrat', 'contract', 'type'
+    ]);
     const contractType = normalizeExcelContract(rawContract);
 
     // Validation

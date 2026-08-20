@@ -50,6 +50,7 @@ export const LedgerHistory: React.FC<LedgerHistoryProps> = ({
     const matchesSearch =
       (emp?.name.toLowerCase().includes(searchTerm.toLowerCase()) || false) ||
       (emp?.idNumber?.toLowerCase().includes(searchTerm.toLowerCase()) || false) ||
+      (emp?.matriculeGL?.toLowerCase().includes(searchTerm.toLowerCase()) || false) ||
       (emp?.position?.toLowerCase().includes(searchTerm.toLowerCase()) || false) ||
       (rec.notes?.toLowerCase().includes(searchTerm.toLowerCase()) || false);
     return matchesEmp && matchesStatus && matchesType && matchesSearch;
@@ -67,8 +68,10 @@ export const LedgerHistory: React.FC<LedgerHistoryProps> = ({
     }
 
     const headers = [
-      'N° Matricule',
+      'N° Matricule RH',
+      'Matricule GL',
       'Nom & Prénom',
+      'Nationalité',
       'Poste / Fonction',
       'Statut Contractuel',
       'Cycle de Congés',
@@ -89,7 +92,9 @@ export const LedgerHistory: React.FC<LedgerHistoryProps> = ({
 
       return [
         emp?.idNumber || 'SANS-MAT',
+        emp?.matriculeGL || '',
         emp?.name || 'Inconnu',
+        emp?.nationality || '',
         emp?.position || '',
         statusLabel,
         contractLabel,
@@ -129,8 +134,10 @@ export const LedgerHistory: React.FC<LedgerHistoryProps> = ({
     }
 
     const headers = [
-      "N° Matricule",
+      "N° Matricule RH",
+      "Matricule GL",
       "Nom & Prénom",
+      "Nationalité",
       "Poste / Fonction",
       "Statut Contractuel",
       "Type de Contrat",
@@ -157,7 +164,9 @@ export const LedgerHistory: React.FC<LedgerHistoryProps> = ({
 
       return [
         escapeCSV(emp?.idNumber || 'SANS-MAT'),
+        escapeCSV(emp?.matriculeGL || ''),
         escapeCSV(emp?.name || 'Inconnu'),
+        escapeCSV(emp?.nationality || ''),
         escapeCSV(emp?.position || ''),
         escapeCSV(statusLabel),
         escapeCSV(contractLabel),

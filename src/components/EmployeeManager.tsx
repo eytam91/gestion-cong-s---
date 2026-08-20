@@ -215,6 +215,8 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({
       onUpdateEmployee({
         ...editingEmployee,
         idNumber: idNumber.trim(),
+        matriculeGL: matriculeGL.trim(),
+        nationality: nationality.trim(),
         name: name.trim(),
         position: position.trim(),
         status,
@@ -224,6 +226,8 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({
     } else {
       onAddEmployee({
         idNumber: idNumber.trim(),
+        matriculeGL: matriculeGL.trim(),
+        nationality: nationality.trim(),
         name: name.trim(),
         position: position.trim(),
         status,
@@ -303,6 +307,7 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({
     const matchesSearch = 
       emp.name.toLowerCase().includes(term) ||
       (emp.idNumber && emp.idNumber.toLowerCase().includes(term)) ||
+      (emp.matriculeGL && emp.matriculeGL.toLowerCase().includes(term)) ||
       (emp.position && emp.position.toLowerCase().includes(term));
 
     const matchesStatus = statusFilter === 'ALL' || emp.status === statusFilter;
@@ -427,12 +432,12 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({
 
             <form onSubmit={handleFormPreSubmit} className="space-y-4">
               {/* N° Matricule & Nom */}
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
                 <div className="sm:col-span-1">
                   <div className="flex items-center justify-between mb-1">
                     <label className="text-2xs font-bold text-stone-700 uppercase tracking-wider flex items-center gap-1">
                       <Hash className="w-3 h-3 text-stone-500" />
-                      N° Matricule *
+                      Matricule RH *
                     </label>
                     {isIdValid && <CheckCircle2 className="w-3 h-3 text-emerald-600" />}
                   </div>
@@ -453,8 +458,24 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({
                   />
                   {errors.idNumber && <p className="text-2xs text-red-600 font-medium mt-1">{errors.idNumber}</p>}
                 </div>
+                
+                <div className="sm:col-span-1">
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-2xs font-bold text-stone-700 uppercase tracking-wider flex items-center gap-1" title="ID Société / ID Entreprise">
+                      <Hash className="w-3 h-3 text-stone-500" />
+                      Matricule GL
+                    </label>
+                  </div>
+                  <input
+                    type="text"
+                    placeholder="GL-0000"
+                    value={matriculeGL}
+                    onChange={(e) => setMatriculeGL(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl border border-stone-200 bg-stone-50 font-mono font-bold text-stone-900 text-xs sm:text-sm focus:bg-white focus:outline-none focus:ring-2 focus:ring-stone-900/10 transition-all"
+                  />
+                </div>
 
-                <div className="sm:col-span-2">
+                <div className="sm:col-span-2 lg:col-span-2">
                   <div className="flex items-center justify-between mb-1">
                     <label className="text-2xs font-bold text-stone-700 uppercase tracking-wider">
                       Nom & Prénom de l'employé *
@@ -480,31 +501,50 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({
                 </div>
               </div>
 
-              {/* Poste / Fonction */}
-              <div>
-                <div className="flex items-center justify-between mb-1">
-                  <label className="text-2xs font-bold text-stone-700 uppercase tracking-wider flex items-center gap-1">
-                    <Briefcase className="w-3 h-3 text-stone-500" />
-                    Poste / Fonction *
-                  </label>
-                  {isPositionValid && <CheckCircle2 className="w-3 h-3 text-emerald-600" />}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {/* Poste / Fonction */}
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-2xs font-bold text-stone-700 uppercase tracking-wider flex items-center gap-1">
+                      <Briefcase className="w-3 h-3 text-stone-500" />
+                      Poste / Fonction *
+                    </label>
+                    {isPositionValid && <CheckCircle2 className="w-3 h-3 text-emerald-600" />}
+                  </div>
+                  <input
+                    type="text"
+                    required
+                    placeholder="ex: Ingénieur Projet, Responsable RH"
+                    value={position}
+                    onChange={(e) => {
+                      setPosition(e.target.value);
+                      if (errors.position) {
+                        setErrors(prev => { const n = { ...prev }; delete n.position; return n; });
+                      }
+                    }}
+                    className={`w-full px-3 py-2 rounded-xl border bg-stone-50 text-stone-900 text-xs sm:text-sm focus:bg-white focus:outline-none focus:ring-2 focus:ring-stone-900/10 transition-all ${
+                      errors.position ? 'border-red-500 ring-2 ring-red-200 bg-red-50/30' : 'border-stone-200'
+                    }`}
+                  />
+                  {errors.position && <p className="text-2xs text-red-600 font-medium mt-1">{errors.position}</p>}
                 </div>
-                <input
-                  type="text"
-                  required
-                  placeholder="ex: Ingénieur Projet, Responsable RH, Superviseur Site"
-                  value={position}
-                  onChange={(e) => {
-                    setPosition(e.target.value);
-                    if (errors.position) {
-                      setErrors(prev => { const n = { ...prev }; delete n.position; return n; });
-                    }
-                  }}
-                  className={`w-full px-3 py-2 rounded-xl border bg-stone-50 text-stone-900 text-xs sm:text-sm focus:bg-white focus:outline-none focus:ring-2 focus:ring-stone-900/10 transition-all ${
-                    errors.position ? 'border-red-500 ring-2 ring-red-200 bg-red-50/30' : 'border-stone-200'
-                  }`}
-                />
-                {errors.position && <p className="text-2xs text-red-600 font-medium mt-1">{errors.position}</p>}
+
+                {/* Nationalité */}
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-2xs font-bold text-stone-700 uppercase tracking-wider flex items-center gap-1">
+                      <Globe className="w-3 h-3 text-stone-500" />
+                      Nationalité
+                    </label>
+                  </div>
+                  <input
+                    type="text"
+                    placeholder="ex: Sénégalaise, Française"
+                    value={nationality}
+                    onChange={(e) => setNationality(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl border border-stone-200 bg-stone-50 text-stone-900 text-xs sm:text-sm focus:bg-white focus:outline-none focus:ring-2 focus:ring-stone-900/10 transition-all"
+                  />
+                </div>
               </div>
 
               {/* Statut Contractuel (Personnel Local vs Expatrié) */}
@@ -904,11 +944,22 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({
                           <h3 className="font-bold text-stone-900 text-base">{emp.name}</h3>
                         </div>
                         <p className="text-xs font-medium text-stone-600">{emp.position || 'Collaborateur'}</p>
-                        <div className="flex items-center gap-1.5 mt-0.5">
+                        <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
                           <span className="font-mono text-2xs font-bold px-1.5 py-0.2 rounded bg-stone-100 text-stone-700 border border-stone-200">
                             {emp.idNumber || 'SANS-MAT'}
                           </span>
-                          <span className="text-[11px] text-stone-400">• Embauché le {new Date(emp.hireDate).toLocaleDateString('fr-FR')}</span>
+                          {emp.matriculeGL && (
+                            <span className="font-mono text-2xs font-bold px-1.5 py-0.2 rounded bg-stone-100 text-stone-700 border border-stone-200">
+                              {emp.matriculeGL}
+                            </span>
+                          )}
+                          {emp.nationality && (
+                            <span className="text-2xs font-bold px-1.5 py-0.2 rounded bg-stone-100 text-stone-700 border border-stone-200 inline-flex items-center gap-0.5">
+                              <Globe className="w-2.5 h-2.5" />
+                              {emp.nationality}
+                            </span>
+                          )}
+                          <span className="text-[11px] text-stone-400 whitespace-nowrap">• Embauché le {new Date(emp.hireDate).toLocaleDateString('fr-FR')}</span>
                         </div>
                       </div>
                     </div>

@@ -67,6 +67,7 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
     id: employee.id,
     name: employee.name,
     idNumber: employee.idNumber || 'SANS-MAT',
+    matriculeGL: employee.matriculeGL || '',
     position: employee.position || 'Collaborateur',
     status: employee.status === 'EXPAT' ? 'Expatrié (EXPAT)' : 'Personnel Local (LOCAL)',
     shortName: employee.name.length > 14 ? employee.name.substring(0, 12) + '...' : employee.name,
@@ -86,7 +87,9 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
           <div className="border-b border-stone-800 pb-1.5 flex justify-between items-start gap-2">
             <div>
               <p className="font-bold text-sm text-amber-300">{data.name}</p>
-              <p className="text-2xs text-stone-400 font-mono">{data.idNumber} • {data.position}</p>
+              <p className="text-2xs text-stone-400 font-mono">
+                {data.idNumber} {data.matriculeGL ? `• ${data.matriculeGL}` : ''} • {data.position}
+              </p>
             </div>
             <span className="text-3xs px-2 py-0.5 rounded bg-stone-800 text-stone-300 font-mono shrink-0">
               {data.status.includes('EXPAT') ? 'EXPAT' : 'LOCAL'}
