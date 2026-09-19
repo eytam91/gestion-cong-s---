@@ -643,9 +643,9 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({
                       TYPE_A (6 mois)
                     </div>
                     <span className="text-[10px] font-normal text-stone-500 leading-relaxed">
-                      • 30 jours / 6 mois<br />
-                      • ~0.1644 j/jour<br />
-                      • Cycle semestriel
+                      • 30j après 5 mois de travail<br />
+                      • 6e mois : 30j de congés<br />
+                      • ~0.1967 j/j travaillé (6 j/m)
                     </span>
                   </label>
 
@@ -669,9 +669,9 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({
                       TYPE_B (12 mois)
                     </div>
                     <span className="text-[10px] font-normal text-stone-500 leading-relaxed">
-                      • 30 jours / an<br />
-                      • ~0.0822 j/jour<br />
-                      • Cycle annuel
+                      • 30j après 11 mois de travail<br />
+                      • 12e mois : 30j de congés<br />
+                      • ~0.0896 j/j travaillé (~2.73 j/m)
                     </span>
                   </label>
                 </div>
@@ -735,7 +735,7 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({
           { label: "Poste / Fonction", value: position, icon: <Briefcase className="w-3.5 h-3.5 text-stone-400" /> },
           { label: "Statut Contractuel", value: status === 'EXPAT' ? 'Expatrié (EXPAT)' : 'Personnel Local (LOCAL)', icon: <Building2 className="w-3.5 h-3.5 text-stone-400" /> },
           { label: "Date d'Embauche", value: new Date(hireDate).toLocaleDateString('fr-FR'), icon: <Calendar className="w-3.5 h-3.5 text-stone-400" /> },
-          { label: "Cycle de Congés", value: contractType === 'TYPE_A' ? 'Type A (30 jours / 6 mois)' : 'Type B (30 jours / 12 mois)', icon: <BadgeCheck className="w-3.5 h-3.5 text-stone-400" /> }
+          { label: "Cycle de Congés", value: contractType === 'TYPE_A' ? 'Type A (30j acquis / 5 mois travail)' : 'Type B (30j acquis / 11 mois travail)', icon: <BadgeCheck className="w-3.5 h-3.5 text-stone-400" /> }
         ]}
         onConfirm={handleExecuteSave}
         onCancel={() => setShowSaveConfirmModal(false)}

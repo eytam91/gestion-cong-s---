@@ -21,7 +21,7 @@ export interface Employee {
   position: string; // Intitulé du poste / fonction (ex: Ingénieur Projet, Superviseur Site)
   status: EmployeeStatus; // 'LOCAL' (Personnel Local) ou 'EXPAT' (Expatrié)
   hireDate: string; // Date d'embauche ISO YYYY-MM-DD
-  contractType: ContractType; // TYPE_A (30j / 6 mois) ou TYPE_B (30j / 12 mois)
+  contractType: ContractType; // TYPE_A (30j acquis / 5 mois travail, cycle 6m) ou TYPE_B (30j acquis / 11 mois travail, cycle 12m)
   createdAt: string;
 }
 
@@ -62,7 +62,8 @@ export interface DeviceSession {
 export interface EmployeeStats {
 
   daysSinceHire: number;
-  dailyAccrualRate: number; // Taux d'acquisition quotidien (0.1644 Type A ou 0.0822 Type B)
+  daysWorked: number; // Jours effectivement travaillés (hors congés pris et sans solde)
+  dailyAccrualRate: number; // Taux d'acquisition quotidien (~0.1967 Type A ou ~0.0896 Type B)
   totalAccruedDays: number; // Jours acquis par le travail
   totalLeaveTakenDays: number; // Jours de congés payés consommés
   balanceDays: number; // Solde de congés actuel en jours (positif ou solde négatif)
