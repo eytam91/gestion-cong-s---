@@ -1,17 +1,15 @@
 import React, { useState, useEffect } from 'react';
-import { 
-  X, 
-  AlertTriangle, 
+import {
+  X,
+  AlertTriangle,
   PlusCircle,
   Banknote,
   CheckCircle2,
-  HelpCircle,
-  Globe,
   Building2,
   Calendar,
   Clock,
   FileText,
-  AlertCircle
+  AlertCircle,
 } from 'lucide-react';
 import { Employee, LeaveRecord, LeaveType } from '../types';
 import { calculateEmployeeStats, LEAVE_TYPE_LABELS } from '../utils/vacationCalc';
@@ -34,14 +32,14 @@ export const LeaveLedgerModal: React.FC<LeaveLedgerModalProps> = ({
   initialEmployeeId,
   onAddLeaveRecord,
 }) => {
-  const [employeeId, setEmployeeId] = useState<string>(initialEmployeeId || (employees[0]?.id || ''));
+  const [employeeId, setEmployeeId] = useState<string>(initialEmployeeId || employees[0]?.id || '');
   const [leaveType, setLeaveType] = useState<LeaveType>('CONGE_PAYE');
   const [isPaid, setIsPaid] = useState<boolean>(true);
   const [startDate, setStartDate] = useState<string>(new Date().toISOString().split('T')[0]);
   const [endDate, setEndDate] = useState<string>(new Date().toISOString().split('T')[0]);
   const [daysCount, setDaysCount] = useState<number>(1);
   const [notes, setNotes] = useState<string>('');
-  
+
   const [errors, setErrors] = useState<{ [key: string]: string }>({});
   const [isSubmittedAttempt, setIsSubmittedAttempt] = useState(false);
 
@@ -52,8 +50,9 @@ export const LeaveLedgerModal: React.FC<LeaveLedgerModalProps> = ({
   useEffect(() => {
     if (initialEmployeeId) {
       setEmployeeId(initialEmployeeId);
-    } else if (employees.length > 0 && !employeeId) {
-      setEmployeeId(employees[0].id);
+    } else if (employees.length > 0) {
+      // Functional form so an already-picked employee is never overwritten.
+      setEmployeeId((prev) => prev || employees[0].id);
     }
   }, [initialEmployeeId, employees]);
 
@@ -67,13 +66,16 @@ export const LeaveLedgerModal: React.FC<LeaveLedgerModalProps> = ({
           const diffTime = Math.abs(e.getTime() - s.getTime());
           const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
           setDaysCount(diffDays);
-          if (errors.endDate) {
-            setErrors(prev => { const n = { ...prev }; delete n.endDate; return n; });
-          }
+          setErrors((prev) => {
+            if (!prev.endDate) return prev;
+            const next = { ...prev };
+            delete next.endDate;
+            return next;
+          });
         } else {
-          setErrors(prev => ({
+          setErrors((prev) => ({
             ...prev,
-            endDate: 'La date de fin ne peut pas être antérieure à la date de début.'
+            endDate: 'La date de fin ne peut pas être antérieure à la date de début.',
           }));
         }
       }
@@ -84,12 +86,12 @@ export const LeaveLedgerModal: React.FC<LeaveLedgerModalProps> = ({
 
   const isFormDirty = (): boolean => {
     return Boolean(
-      notes.trim() || 
-      daysCount !== 1 || 
-      leaveType !== 'CONGE_PAYE' || 
+      notes.trim() ||
+      daysCount !== 1 ||
+      leaveType !== 'CONGE_PAYE' ||
       !isPaid ||
       startDate !== new Date().toISOString().split('T')[0] ||
-      endDate !== new Date().toISOString().split('T')[0]
+      endDate !== new Date().toISOString().split('T')[0],
     );
   };
 
@@ -118,7 +120,7 @@ export const LeaveLedgerModal: React.FC<LeaveLedgerModalProps> = ({
     const errs: { [key: string]: string } = {};
 
     // 1. Employé sélectionné
-    if (!employeeId || !employees.some(e => e.id === employeeId)) {
+    if (!employeeId || !employees.some((e) => e.id === employeeId)) {
       errs.employeeId = 'Veuillez sélectionner un collaborateur valide.';
     }
 
@@ -182,8 +184,10 @@ export const LeaveLedgerModal: React.FC<LeaveLedgerModalProps> = ({
     onClose();
   };
 
-  const isEmployeeValid = Boolean(employeeId && employees.some(e => e.id === employeeId));
-  const isDateRangeValid = Boolean(startDate && endDate && new Date(endDate) >= new Date(startDate));
+  const isEmployeeValid = Boolean(employeeId && employees.some((e) => e.id === employeeId));
+  const isDateRangeValid = Boolean(
+    startDate && endDate && new Date(endDate) >= new Date(startDate),
+  );
   const isDaysCountValid = Boolean(daysCount > 0 && daysCount <= 365 && !isNaN(daysCount));
   const isFormFullyValid = isEmployeeValid && isDateRangeValid && isDaysCountValid;
 
@@ -198,8 +202,12 @@ export const LeaveLedgerModal: React.FC<LeaveLedgerModalProps> = ({
                 <PlusCircle className="w-5 h-5 text-amber-400" />
               </div>
               <div>
-                <h3 className="text-lg font-bold text-stone-900">Saisie d'un Congé ou d'une Absence</h3>
-                <p className="text-2xs text-stone-500">Enregistrement avec calcul automatique et vérification logique stricte</p>
+                <h3 className="text-lg font-bold text-stone-900">
+                  Saisie d'un Congé ou d'une Absence
+                </h3>
+                <p className="text-2xs text-stone-500">
+                  Enregistrement avec calcul automatique et vérification logique stricte
+                </p>
               </div>
             </div>
             <button
@@ -216,7 +224,9 @@ export const LeaveLedgerModal: React.FC<LeaveLedgerModalProps> = ({
             <div className="p-3.5 bg-red-50 border border-red-200 rounded-2xl flex items-start gap-2.5 text-xs text-red-800">
               <AlertCircle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
               <div>
-                <p className="font-bold">Impossible d'enregistrer : Veuillez corriger les erreurs suivantes :</p>
+                <p className="font-bold">
+                  Impossible d'enregistrer : Veuillez corriger les erreurs suivantes :
+                </p>
                 <ul className="list-disc pl-4 mt-1 space-y-0.5 text-2xs">
                   {Object.values(errors).map((err, i) => (
                     <li key={i}>{err}</li>
@@ -237,7 +247,8 @@ export const LeaveLedgerModal: React.FC<LeaveLedgerModalProps> = ({
               </div>
               {employees.length === 0 ? (
                 <div className="p-3 bg-amber-50 rounded-xl border border-amber-200 text-xs text-amber-900">
-                  Aucun employé enregistré. Veuillez d'abord ajouter un employé ou importer des collaborateurs dans l'onglet Effectif avant d'enregistrer une absence.
+                  Aucun employé enregistré. Veuillez d'abord ajouter un employé ou importer des
+                  collaborateurs dans l'onglet Effectif avant d'enregistrer une absence.
                 </div>
               ) : (
                 <select
@@ -245,22 +256,34 @@ export const LeaveLedgerModal: React.FC<LeaveLedgerModalProps> = ({
                   onChange={(e) => {
                     setEmployeeId(e.target.value);
                     if (errors.employeeId) {
-                      setErrors(prev => { const n = { ...prev }; delete n.employeeId; return n; });
+                      setErrors((prev) => {
+                        const n = { ...prev };
+                        delete n.employeeId;
+                        return n;
+                      });
                     }
                   }}
                   className={`w-full px-3.5 py-2.5 rounded-xl border bg-stone-50 text-stone-900 text-xs sm:text-sm focus:bg-white focus:outline-none focus:ring-2 focus:ring-stone-900/10 font-semibold transition-all ${
-                    errors.employeeId ? 'border-red-500 ring-2 ring-red-200 bg-red-50/30' : 'border-stone-200'
+                    errors.employeeId
+                      ? 'border-red-500 ring-2 ring-red-200 bg-red-50/30'
+                      : 'border-stone-200'
                   }`}
                 >
-                  <option value="" disabled>-- Sélectionner un employé --</option>
+                  <option value="" disabled>
+                    -- Sélectionner un employé --
+                  </option>
                   {employees.map((emp) => (
                     <option key={emp.id} value={emp.id}>
-                      [{emp.idNumber || 'SANS-MAT'}] {emp.name} — {emp.position || 'Collaborateur'} ({emp.status === 'EXPAT' ? 'Expatrié' : 'Personnel Local'} • {emp.contractType === 'TYPE_A' ? 'Type A 6m' : 'Type B 12m'})
+                      [{emp.idNumber || 'SANS-MAT'}] {emp.name} — {emp.position || 'Collaborateur'}{' '}
+                      ({emp.status === 'EXPAT' ? 'Expatrié' : 'Personnel Local'} •{' '}
+                      {emp.contractType === 'TYPE_A' ? 'Type A 6m' : 'Type B 12m'})
                     </option>
                   ))}
                 </select>
               )}
-              {errors.employeeId && <p className="text-2xs text-red-600 font-medium mt-1">{errors.employeeId}</p>}
+              {errors.employeeId && (
+                <p className="text-2xs text-red-600 font-medium mt-1">{errors.employeeId}</p>
+              )}
             </div>
 
             {/* Statut de Rémunération (Payé / Non Payé) */}
@@ -296,8 +319,8 @@ export const LeaveLedgerModal: React.FC<LeaveLedgerModalProps> = ({
                 </button>
               </div>
               <p className="text-2xs text-stone-500 leading-relaxed">
-                {isPaid 
-                  ? '✓ Ce congé est rémunéré et sera déduit du solde de congés acquis.' 
+                {isPaid
+                  ? '✓ Ce congé est rémunéré et sera déduit du solde de congés acquis.'
                   : '⚠ Ce congé est non rémunéré (sans solde). Il est consigné mais NE DÉDUIT PAS le solde de congés payés.'}
               </p>
             </div>
@@ -341,14 +364,20 @@ export const LeaveLedgerModal: React.FC<LeaveLedgerModalProps> = ({
                   onChange={(e) => {
                     setStartDate(e.target.value);
                     if (errors.startDate) {
-                      setErrors(prev => { const n = { ...prev }; delete n.startDate; return n; });
+                      setErrors((prev) => {
+                        const n = { ...prev };
+                        delete n.startDate;
+                        return n;
+                      });
                     }
                   }}
                   className={`w-full px-3 py-2 rounded-xl border bg-stone-50 text-stone-900 text-xs focus:bg-white focus:outline-none focus:ring-2 focus:ring-stone-900/10 ${
                     errors.startDate ? 'border-red-500 ring-2 ring-red-200' : 'border-stone-200'
                   }`}
                 />
-                {errors.startDate && <p className="text-2xs text-red-600 font-medium mt-1">{errors.startDate}</p>}
+                {errors.startDate && (
+                  <p className="text-2xs text-red-600 font-medium mt-1">{errors.startDate}</p>
+                )}
               </div>
 
               <div>
@@ -365,14 +394,24 @@ export const LeaveLedgerModal: React.FC<LeaveLedgerModalProps> = ({
                   onChange={(e) => {
                     setEndDate(e.target.value);
                     if (errors.endDate) {
-                      setErrors(prev => { const n = { ...prev }; delete n.endDate; return n; });
+                      setErrors((prev) => {
+                        const n = { ...prev };
+                        delete n.endDate;
+                        return n;
+                      });
                     }
                   }}
                   className={`w-full px-3 py-2 rounded-xl border bg-stone-50 text-stone-900 text-xs focus:bg-white focus:outline-none focus:ring-2 focus:ring-stone-900/10 ${
-                    errors.endDate ? 'border-red-500 ring-2 ring-red-200 bg-red-50/40' : 'border-stone-200'
+                    errors.endDate
+                      ? 'border-red-500 ring-2 ring-red-200 bg-red-50/40'
+                      : 'border-stone-200'
                   }`}
                 />
-                {errors.endDate && <p className="text-2xs text-red-600 font-bold mt-1 leading-tight">{errors.endDate}</p>}
+                {errors.endDate && (
+                  <p className="text-2xs text-red-600 font-bold mt-1 leading-tight">
+                    {errors.endDate}
+                  </p>
+                )}
               </div>
 
               <div>
@@ -392,14 +431,22 @@ export const LeaveLedgerModal: React.FC<LeaveLedgerModalProps> = ({
                   onChange={(e) => {
                     setDaysCount(Number(e.target.value));
                     if (errors.daysCount) {
-                      setErrors(prev => { const n = { ...prev }; delete n.daysCount; return n; });
+                      setErrors((prev) => {
+                        const n = { ...prev };
+                        delete n.daysCount;
+                        return n;
+                      });
                     }
                   }}
                   className={`w-full px-3 py-2 rounded-xl border bg-stone-50 text-stone-900 text-xs font-mono font-bold focus:bg-white focus:outline-none focus:ring-2 focus:ring-stone-900/10 ${
-                    errors.daysCount ? 'border-red-500 ring-2 ring-red-200 bg-red-50/40' : 'border-stone-200'
+                    errors.daysCount
+                      ? 'border-red-500 ring-2 ring-red-200 bg-red-50/40'
+                      : 'border-stone-200'
                   }`}
                 />
-                {errors.daysCount && <p className="text-2xs text-red-600 font-medium mt-1">{errors.daysCount}</p>}
+                {errors.daysCount && (
+                  <p className="text-2xs text-red-600 font-medium mt-1">{errors.daysCount}</p>
+                )}
               </div>
             </div>
 
@@ -409,7 +456,9 @@ export const LeaveLedgerModal: React.FC<LeaveLedgerModalProps> = ({
                 <div className="flex justify-between items-center font-semibold">
                   <span>Solde de congés actuel avant cette saisie:</span>
                   <span className="font-mono font-bold text-stone-900">
-                    {stats.balanceDays >= 0 ? `+${stats.balanceDays.toFixed(1)} j` : `${stats.balanceDays.toFixed(1)} j`}
+                    {stats.balanceDays >= 0
+                      ? `+${stats.balanceDays.toFixed(1)} j`
+                      : `${stats.balanceDays.toFixed(1)} j`}
                   </span>
                 </div>
 
@@ -417,8 +466,12 @@ export const LeaveLedgerModal: React.FC<LeaveLedgerModalProps> = ({
                   <>
                     <div className="flex justify-between items-center font-bold pt-1.5 border-t border-stone-200/80">
                       <span>Nouveau Solde Projeté :</span>
-                      <span className={`font-mono text-sm ${projectedBalance < 0 ? 'text-red-600 font-extrabold' : 'text-emerald-700 font-extrabold'}`}>
-                        {projectedBalance >= 0 ? `+${projectedBalance.toFixed(1)} j` : `${projectedBalance.toFixed(1)} j (Négatif)`}
+                      <span
+                        className={`font-mono text-sm ${projectedBalance < 0 ? 'text-red-600 font-extrabold' : 'text-emerald-700 font-extrabold'}`}
+                      >
+                        {projectedBalance >= 0
+                          ? `+${projectedBalance.toFixed(1)} j`
+                          : `${projectedBalance.toFixed(1)} j (Négatif)`}
                       </span>
                     </div>
 
@@ -429,7 +482,9 @@ export const LeaveLedgerModal: React.FC<LeaveLedgerModalProps> = ({
                           ⚠️ Attention : Dépassement des Jours Acquis !
                         </p>
                         <p>
-                          L'employé aura consommé <strong>{Math.abs(projectedBalance).toFixed(1)} jours</strong> au-delà de ses droits acquis.
+                          L'employé aura consommé{' '}
+                          <strong>{Math.abs(projectedBalance).toFixed(1)} jours</strong> au-delà de
+                          ses droits acquis.
                         </p>
                       </div>
                     )}
@@ -462,7 +517,9 @@ export const LeaveLedgerModal: React.FC<LeaveLedgerModalProps> = ({
             {/* Validation Badge */}
             <div className="p-3 bg-stone-50 rounded-2xl border border-stone-200/80 flex items-center justify-between text-2xs">
               <span className="text-stone-500 font-medium">Vérification de la saisie :</span>
-              <span className={`font-bold flex items-center gap-1 ${isFormFullyValid ? 'text-emerald-700' : 'text-amber-700'}`}>
+              <span
+                className={`font-bold flex items-center gap-1 ${isFormFullyValid ? 'text-emerald-700' : 'text-amber-700'}`}
+              >
                 {isFormFullyValid ? (
                   <>
                     <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
@@ -508,37 +565,39 @@ export const LeaveLedgerModal: React.FC<LeaveLedgerModalProps> = ({
           confirmLabel="Confirmer et Enregistrer au Journal"
           cancelLabel="Continuer la modification"
           summaryItems={[
-            { 
-              label: "Collaborateur", 
+            {
+              label: 'Collaborateur',
               value: `[${selectedEmployee.idNumber || 'SANS-MAT'}] ${selectedEmployee.name}`,
-              icon: <Building2 className="w-3.5 h-3.5 text-stone-400" />
+              icon: <Building2 className="w-3.5 h-3.5 text-stone-400" />,
             },
-            { 
-              label: "Catégorie d'Absence", 
+            {
+              label: "Catégorie d'Absence",
               value: LEAVE_TYPE_LABELS[leaveType],
-              icon: <FileText className="w-3.5 h-3.5 text-stone-400" />
+              icon: <FileText className="w-3.5 h-3.5 text-stone-400" />,
             },
-            { 
-              label: "Période", 
+            {
+              label: 'Période',
               value: `Du ${new Date(startDate).toLocaleDateString('fr-FR')} au ${new Date(endDate).toLocaleDateString('fr-FR')}`,
-              icon: <Calendar className="w-3.5 h-3.5 text-stone-400" />
+              icon: <Calendar className="w-3.5 h-3.5 text-stone-400" />,
             },
-            { 
-              label: "Nombre de Jours", 
+            {
+              label: 'Nombre de Jours',
               value: `${daysCount} jour(s)`,
-              icon: <Clock className="w-3.5 h-3.5 text-stone-400" />
+              icon: <Clock className="w-3.5 h-3.5 text-stone-400" />,
             },
-            { 
-              label: "Rémunération", 
-              value: isPaid ? "Congé Payé (Déduit du solde)" : "Sans Solde (Non déduit)",
-              icon: <Banknote className="w-3.5 h-3.5 text-stone-400" />
+            {
+              label: 'Rémunération',
+              value: isPaid ? 'Congé Payé (Déduit du solde)' : 'Sans Solde (Non déduit)',
+              icon: <Banknote className="w-3.5 h-3.5 text-stone-400" />,
             },
-            { 
-              label: "Solde Projeté", 
-              value: isPaid 
-                ? (projectedBalance >= 0 ? `+${projectedBalance.toFixed(1)} j` : `${projectedBalance.toFixed(1)} j (Négatif)`)
-                : `${stats?.balanceDays.toFixed(1)} j (Inchangé)`
-            }
+            {
+              label: 'Solde Projeté',
+              value: isPaid
+                ? projectedBalance >= 0
+                  ? `+${projectedBalance.toFixed(1)} j`
+                  : `${projectedBalance.toFixed(1)} j (Négatif)`
+                : `${stats?.balanceDays.toFixed(1)} j (Inchangé)`,
+            },
           ]}
           warningMessage={
             projectedBalance < 0 && isPaid

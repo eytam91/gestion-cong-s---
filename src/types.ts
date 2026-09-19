@@ -37,13 +37,31 @@ export interface LeaveRecord {
   createdAt: string;
 }
 
+export type AuditAction =
+  | 'EMPLOYEE_CREATED'
+  | 'EMPLOYEE_UPDATED'
+  | 'EMPLOYEE_DELETED'
+  | 'EMPLOYEES_IMPORTED'
+  | 'LEAVE_ADDED'
+  | 'LEAVE_DELETED'
+  | 'DATA_CLEARED'
+  | 'USER_ROLE_CHANGED'
+  | 'USER_DELETED';
+
+export interface AuditActor {
+  uid: string;
+  name: string;
+}
+
 export interface ActivityLog {
   id: string;
   timestamp: string;
-  action: 'EMPLOYEE_CREATED' | 'EMPLOYEE_UPDATED' | 'EMPLOYEE_DELETED' | 'EMPLOYEES_IMPORTED' | 'LEAVE_ADDED' | 'LEAVE_DELETED' | 'DATA_RESET' | 'DATA_CLEARED' | 'DEVICE_CONNECTED';
+  action: AuditAction;
   actionLabel: string;
   details: string;
   targetId?: string;
+  actorUid: string;
+  actorName: string;
   deviceId: string;
   deviceType: string;
 }
@@ -60,7 +78,6 @@ export interface DeviceSession {
 }
 
 export interface EmployeeStats {
-
   daysSinceHire: number;
   dailyAccrualRate: number; // Taux d'acquisition quotidien (0.1644 Type A ou 0.0822 Type B)
   totalAccruedDays: number; // Jours acquis par le travail
@@ -71,7 +88,7 @@ export interface EmployeeStats {
   isExceededAllocatedDays: boolean; // Vrai si l'employé a dépassé ses jours acquis
   exceededDays: number; // Nombre de jours pris au-delà des jours acquis
   daysToPayback: number; // Nombre de jours de travail nécessaires pour résorber/régulariser le solde négatif
-  
+
   // Catégories de congés spécifiques (en jours)
   congePayeDays: number;
   unpaidLeaveDays: number; // Total jours de congés non payés (sans solde)

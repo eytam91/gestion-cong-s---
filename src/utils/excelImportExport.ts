@@ -4,7 +4,7 @@ import { calculateEmployeeStats } from './vacationCalc';
 
 export interface ParsedEmployeeRow {
   index: number;
-  raw: Record<string, any>;
+  raw: Record<string, unknown>;
   idNumber: string;
   matriculeGL: string;
   nationality: string;
@@ -32,12 +32,16 @@ export interface ParseResult {
 }
 
 /**
- * Normalizes any date value (Excel serial number, Date object, string) into YYYY-MM-DD format.
+ * Normalizes any date value (Excel serial number, Date object, string) into
+ * YYYY-MM-DD, or returns null when the value cannot be understood.
+ *
+ * Returning null rather than a default matters: the hire date drives every leave
+ * accrual figure, so silently substituting today's date would quietly corrupt an
+ * employee's balance instead of surfacing a typo at import time.
  */
-export function normalizeExcelDate(val: any): string {
-  const todayStr = new Date().toISOString().split('T')[0];
+export function normalizeExcelDate(val: unknown): string | null {
   if (val === null || val === undefined || val === '') {
-    return todayStr;
+    return null;
   }
 
   // If already a Date object (from XLSX cellDates: true)
@@ -68,25 +72,21 @@ export function normalizeExcelDate(val: any): string {
 
   // If YYYY-MM-DD
   if (/^\d{4}-\d{2}-\d{2}$/.test(str)) {
-    return str;
+    return isRealCalendarDate(str) ? str : null;
   }
 
   // If DD/MM/YYYY or DD-MM-YYYY or DD.MM.YYYY
-  const dmyMatch = str.match(/^(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{4})$/);
+  const dmyMatch = str.match(/^(\d{1,2})[/\-.](\d{1,2})[/\-.](\d{4})$/);
   if (dmyMatch) {
-    const day = dmyMatch[1].padStart(2, '0');
-    const month = dmyMatch[2].padStart(2, '0');
-    const year = dmyMatch[3];
-    return `${year}-${month}-${day}`;
+    const iso = `${dmyMatch[3]}-${dmyMatch[2].padStart(2, '0')}-${dmyMatch[1].padStart(2, '0')}`;
+    return isRealCalendarDate(iso) ? iso : null;
   }
 
   // If YYYY/MM/DD or YYYY.MM.DD
-  const ymdMatch = str.match(/^(\d{4})[\/\-\.](\d{1,2})[\/\-\.](\d{1,2})$/);
+  const ymdMatch = str.match(/^(\d{4})[/\-.](\d{1,2})[/\-.](\d{1,2})$/);
   if (ymdMatch) {
-    const year = ymdMatch[1];
-    const month = ymdMatch[2].padStart(2, '0');
-    const day = ymdMatch[3].padStart(2, '0');
-    return `${year}-${month}-${day}`;
+    const iso = `${ymdMatch[1]}-${ymdMatch[2].padStart(2, '0')}-${ymdMatch[3].padStart(2, '0')}`;
+    return isRealCalendarDate(iso) ? iso : null;
   }
 
   // Try standard Date parsing
@@ -98,13 +98,13 @@ export function normalizeExcelDate(val: any): string {
     }
   }
 
-  return todayStr;
+  return null;
 }
 
 /**
  * Normalizes employee status (LOCAL or EXPAT) with smart alias matching.
  */
-export function normalizeExcelStatus(val: any): EmployeeStatus {
+export function normalizeExcelStatus(val: unknown): EmployeeStatus {
   if (!val) return 'LOCAL';
   const str = String(val).trim().toUpperCase();
 
@@ -124,11 +124,14 @@ export function normalizeExcelStatus(val: any): EmployeeStatus {
 /**
  * Normalizes contract type (TYPE_A: 30j/6m or TYPE_B: 30j/12m).
  */
-export function normalizeExcelContract(val: any): ContractType {
+export function normalizeExcelContract(val: unknown): ContractType {
   if (!val) return 'TYPE_A';
-  
+
   // Remove all non-alphanumeric characters (spaces, dashes, underscores) to match reliably
-  const str = String(val).trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+  const str = String(val)
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, '');
 
   if (
     str.includes('TYPEB') ||
@@ -146,7 +149,19 @@ export function normalizeExcelContract(val: any): ContractType {
 }
 
 /**
- * Normalizes string for fuzzy key lookup (removes accents, punctuation, extra spaces).
+ * Confirms a YYYY-MM-DD string is a real calendar date. Regex alone accepts
+ * impossible values like 32/13/2024, which would otherwise be stored verbatim.
+ */
+function isRealCalendarDate(iso: string): boolean {
+  const [y, m, d] = iso.split('-').map(Number);
+  if (!y || !m || !d || m < 1 || m > 12 || d < 1 || d > 31) return false;
+  if (y < 1970 || y > 2099) return false;
+  const probe = new Date(Date.UTC(y, m - 1, d));
+  return probe.getUTCFullYear() === y && probe.getUTCMonth() === m - 1 && probe.getUTCDate() === d;
+}
+
+/**
+ * Normalizes a header for fuzzy lookup (removes accents, punctuation, spacing).
  */
 function cleanKey(k: string): string {
   return String(k || '')
@@ -163,10 +178,10 @@ function cleanKey(k: string): string {
 export async function parseExcelOrCsvFile(
   file: File,
   targetSheetName?: string,
-  existingEmployees: Employee[] = []
+  existingEmployees: Employee[] = [],
 ): Promise<ParseResult> {
   const buffer = await file.arrayBuffer();
-  
+
   // Read workbook with SheetJS
   const workbook = XLSX.read(buffer, {
     type: 'array',
@@ -180,9 +195,8 @@ export async function parseExcelOrCsvFile(
     throw new Error('Le classeur Excel ne contient aucune feuille de calcul.');
   }
 
-  const selectedSheet = targetSheetName && sheetNames.includes(targetSheetName)
-    ? targetSheetName
-    : sheetNames[0];
+  const selectedSheet =
+    targetSheetName && sheetNames.includes(targetSheetName) ? targetSheetName : sheetNames[0];
 
   const worksheet = workbook.Sheets[selectedSheet];
   if (!worksheet) {
@@ -190,7 +204,7 @@ export async function parseExcelOrCsvFile(
   }
 
   // Convert to JSON objects with raw headers
-  const rawRows = XLSX.utils.sheet_to_json<Record<string, any>>(worksheet, {
+  const rawRows = XLSX.utils.sheet_to_json<Record<string, unknown>>(worksheet, {
     defval: '',
     blankrows: false,
   });
@@ -211,7 +225,7 @@ export async function parseExcelOrCsvFile(
   }
 
   const existingMatricules = new Set(
-    existingEmployees.map((e) => (e.idNumber || '').trim().toLowerCase()).filter(Boolean)
+    existingEmployees.map((e) => (e.idNumber || '').trim().toLowerCase()).filter(Boolean),
   );
 
   const parsedRows: ParsedEmployeeRow[] = [];
@@ -219,7 +233,7 @@ export async function parseExcelOrCsvFile(
   rawRows.forEach((row, idx) => {
     const keys = Object.keys(row);
 
-    const getVal = (patterns: string[]): any => {
+    const getVal = (patterns: string[]): unknown => {
       // 1. Try exact matches first, in order of preferred patterns
       for (const p of patterns) {
         const cp = cleanKey(p);
@@ -233,7 +247,7 @@ export async function parseExcelOrCsvFile(
           }
         }
       }
-      
+
       // 2. Try substring matches, in order of preferred patterns
       for (const p of patterns) {
         const cp = cleanKey(p);
@@ -247,12 +261,23 @@ export async function parseExcelOrCsvFile(
           }
         }
       }
-      
+
       return '';
     };
 
     // 1. Matricule RH
-    const rawId = getVal(['matriculerh', 'matricule', 'idnumber', 'id', 'mat', 'numero', 'n', 'ref', 'badge', 'empid']);
+    const rawId = getVal([
+      'matriculerh',
+      'matricule',
+      'idnumber',
+      'id',
+      'mat',
+      'numero',
+      'n',
+      'ref',
+      'badge',
+      'empid',
+    ]);
     const idNumber = String(rawId || '').trim() || `MAT-${String(idx + 1).padStart(4, '0')}`;
 
     // 1b. Matricule GL (ID Société / Entreprise)
@@ -270,7 +295,7 @@ export async function parseExcelOrCsvFile(
       'identreprise',
       'compagnie',
       'codeentreprise',
-      'societeid'
+      'societeid',
     ]);
     const matriculeGL = String(rawMatriculeGL || '').trim();
 
@@ -282,7 +307,7 @@ export async function parseExcelOrCsvFile(
       'paysorigine',
       'citoyennete',
       'origine',
-      'national'
+      'national',
     ]);
     const nationality = String(rawNationality || '').trim();
 
@@ -297,13 +322,13 @@ export async function parseExcelOrCsvFile(
         'employe',
         'agent',
         'personnel',
-      ]) || ''
+      ]) || '',
     ).trim();
 
     if (!fullName) {
       const separateNom = String(getVal(['nomfamille', 'nom', 'name', 'lastname']) || '').trim();
       const separatePrenom = String(getVal(['prenom', 'firstname', 'givenname']) || '').trim();
-      
+
       if (separateNom && separatePrenom && separateNom !== separatePrenom) {
         fullName = `${separatePrenom} ${separateNom}`;
       } else {
@@ -312,21 +337,65 @@ export async function parseExcelOrCsvFile(
     }
 
     // 3. Poste / Fonction
-    const rawPosition = getVal(['poste', 'fonction', 'position', 'metier', 'titre', 'intitule', 'role', 'job', 'jobtitle', 'service', 'departement']);
+    const rawPosition = getVal([
+      'poste',
+      'fonction',
+      'position',
+      'metier',
+      'titre',
+      'intitule',
+      'role',
+      'job',
+      'jobtitle',
+      'service',
+      'departement',
+    ]);
     const position = String(rawPosition || '').trim() || 'Collaborateur RH';
 
     // 4. Statut (LOCAL ou EXPAT)
-    const rawStatus = getVal(['statut', 'status', 'typepersonnel', 'localexpat', 'expat', 'categorie']);
-    const status = normalizeExcelStatus(rawStatus || (nationality && !nationality.toLowerCase().includes('locale') && !nationality.toLowerCase().includes('nationale') ? nationality : ''));
+    const rawStatus = getVal([
+      'statut',
+      'status',
+      'typepersonnel',
+      'localexpat',
+      'expat',
+      'categorie',
+    ]);
+    const status = normalizeExcelStatus(
+      rawStatus ||
+        (nationality &&
+        !nationality.toLowerCase().includes('locale') &&
+        !nationality.toLowerCase().includes('nationale')
+          ? nationality
+          : ''),
+    );
 
     // 5. Date d'embauche
-    const rawHireDate = getVal(['dateembauche', 'datedembauche', 'datedentree', 'embauche', 'hiredate', 'hire_date', 'startdate', 'recrutement', 'date']);
-    const hireDate = normalizeExcelDate(rawHireDate);
+    const rawHireDate = getVal([
+      'dateembauche',
+      'datedembauche',
+      'datedentree',
+      'embauche',
+      'hiredate',
+      'hire_date',
+      'startdate',
+      'recrutement',
+      'date',
+    ]);
+    const parsedHireDate = normalizeExcelDate(rawHireDate);
 
     // 6. Type de contrat
     const rawContract = getVal([
-      'typecontrat', 'typedecontrat', 'contracttype', 'cycle', 'regime', 'formule', 
-      'duree', 'contrat', 'contract', 'type'
+      'typecontrat',
+      'typedecontrat',
+      'contracttype',
+      'cycle',
+      'regime',
+      'formule',
+      'duree',
+      'contrat',
+      'contract',
+      'type',
     ]);
     const contractType = normalizeExcelContract(rawContract);
 
@@ -342,6 +411,16 @@ export async function parseExcelOrCsvFile(
       validationErrors.push('N° Matricule RH manquant');
     }
 
+    if (!parsedHireDate) {
+      validationErrors.push(
+        rawHireDate
+          ? `Date d'embauche illisible : "${String(rawHireDate)}" (format attendu AAAA-MM-JJ ou JJ/MM/AAAA)`
+          : "Date d'embauche manquante",
+      );
+    } else if (parsedHireDate > new Date().toISOString().split('T')[0]) {
+      validationErrors.push(`Date d'embauche dans le futur : ${parsedHireDate}`);
+    }
+
     const isDuplicate = existingMatricules.has(idNumber.toLowerCase());
 
     parsedRows.push({
@@ -353,7 +432,7 @@ export async function parseExcelOrCsvFile(
       name: fullName,
       position,
       status,
-      hireDate,
+      hireDate: parsedHireDate ?? '',
       contractType,
       isValid: validationErrors.length === 0,
       validationErrors,
@@ -400,14 +479,86 @@ export function downloadEmployeeExcelTemplate() {
   ];
 
   const sampleData = [
-    ['MAT-0012', 'GL-1042', 'Karim Alami', 'Sénégalaise', 'Ingénieur Projet Senior', 'LOCAL', '2024-01-15', 'TYPE_A'],
-    ['MAT-0015', 'GL-1045', 'Sophie Laurent', 'Française', 'Responsable Ressources Humaines', 'LOCAL', '2024-06-01', 'TYPE_A'],
-    ['MAT-0020', 'GL-1050', 'Jean-Pierre Dubois', 'Française', 'Directeur des Opérations', 'EXPAT', '2025-02-10', 'TYPE_B'],
-    ['MAT-0025', 'GL-1055', 'Marc Lemoine', 'Belge', 'Superviseur Sécurité Site', 'EXPAT', '2024-09-01', 'TYPE_A'],
-    ['MAT-0030', 'GL-1060', 'Fatima Zahra', 'Marocaine', 'Comptable Générale', 'LOCAL', '2023-11-20', 'TYPE_B'],
-    ['MAT-0035', 'GL-1065', 'Alexandre Petit', 'Française', 'Chef de Chantier', 'EXPAT', '2024-04-10', 'TYPE_A'],
-    ['MAT-0040', 'GL-1070', 'Mamadou Diallo', 'Guinéenne', 'Technicien Électromécanicien', 'LOCAL', '2024-07-01', 'TYPE_A'],
-    ['MAT-0045', 'GL-1075', 'Chen Wei', 'Chinoise', 'Expert Génie Civil', 'EXPAT', '2024-03-15', 'TYPE_B'],
+    [
+      'MAT-0012',
+      'GL-1042',
+      'Karim Alami',
+      'Sénégalaise',
+      'Ingénieur Projet Senior',
+      'LOCAL',
+      '2024-01-15',
+      'TYPE_A',
+    ],
+    [
+      'MAT-0015',
+      'GL-1045',
+      'Sophie Laurent',
+      'Française',
+      'Responsable Ressources Humaines',
+      'LOCAL',
+      '2024-06-01',
+      'TYPE_A',
+    ],
+    [
+      'MAT-0020',
+      'GL-1050',
+      'Jean-Pierre Dubois',
+      'Française',
+      'Directeur des Opérations',
+      'EXPAT',
+      '2025-02-10',
+      'TYPE_B',
+    ],
+    [
+      'MAT-0025',
+      'GL-1055',
+      'Marc Lemoine',
+      'Belge',
+      'Superviseur Sécurité Site',
+      'EXPAT',
+      '2024-09-01',
+      'TYPE_A',
+    ],
+    [
+      'MAT-0030',
+      'GL-1060',
+      'Fatima Zahra',
+      'Marocaine',
+      'Comptable Générale',
+      'LOCAL',
+      '2023-11-20',
+      'TYPE_B',
+    ],
+    [
+      'MAT-0035',
+      'GL-1065',
+      'Alexandre Petit',
+      'Française',
+      'Chef de Chantier',
+      'EXPAT',
+      '2024-04-10',
+      'TYPE_A',
+    ],
+    [
+      'MAT-0040',
+      'GL-1070',
+      'Mamadou Diallo',
+      'Guinéenne',
+      'Technicien Électromécanicien',
+      'LOCAL',
+      '2024-07-01',
+      'TYPE_A',
+    ],
+    [
+      'MAT-0045',
+      'GL-1075',
+      'Chen Wei',
+      'Chinoise',
+      'Expert Génie Civil',
+      'EXPAT',
+      '2024-03-15',
+      'TYPE_B',
+    ],
   ];
 
   const ws = XLSX.utils.aoa_to_sheet([headers, ...sampleData]);

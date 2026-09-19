@@ -1,18 +1,21 @@
-import React, { useState, useEffect } from 'react';
-import { 
-  Users, 
-  LayoutDashboard, 
-  FileText, 
-  Plus, 
-  Building2, 
-  CheckCircle2, 
-  ShieldCheck, 
-  Database, 
-  LogIn, 
-  LogOut, 
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import {
+  Users,
+  LayoutDashboard,
+  FileText,
+  Plus,
+  Building2,
+  CheckCircle2,
+  ShieldCheck,
+  Database,
+  LogIn,
+  LogOut,
   User as UserIcon,
   RefreshCw,
-  Globe
+  Globe,
+  AlertCircle,
+  Clock,
+  Lock,
 } from 'lucide-react';
 import { Employee, LeaveRecord } from './types';
 import { DashboardOverview } from './components/DashboardOverview';
@@ -22,129 +25,137 @@ import { LeaveLedgerModal } from './components/LeaveLedgerModal';
 import { AuditLogsManager } from './components/AuditLogsManager';
 import { UserManager } from './components/UserManager';
 import { AuthModal } from './components/AuthModal';
+import { ConfirmModal } from './components/ConfirmModal';
 import { registerDeviceConnection, addActivityLog } from './utils/auditLogger';
 import { useAuth } from './context/AuthContext';
-import { 
-  initializeFirestoreData, 
-  fetchEmployees, 
-  saveEmployee, 
-  batchSaveEmployees, 
-  updateEmployeeDoc, 
-  deleteEmployeeDoc, 
-  fetchLeaveRecords, 
-  saveLeaveRecord, 
-  deleteLeaveRecordDoc, 
-  resetDemoDataToFirestore, 
-  clearAllFirestoreData 
+import {
+  fetchAllData,
+  fetchEmployees,
+  saveEmployee,
+  batchSaveEmployees,
+  updateEmployeeDoc,
+  deleteEmployeeDoc,
+  saveLeaveRecord,
+  deleteLeaveRecordDoc,
+  clearAllFirestoreData,
 } from './services/firestoreService';
 
+type Tab = 'dashboard' | 'employees' | 'ledger' | 'audit' | 'users';
+
+/** Full-screen states shown instead of the app when the viewer has no access. */
+const Gate: React.FC<{
+  icon: React.ReactNode;
+  title: string;
+  message: string;
+  action?: React.ReactNode;
+}> = ({ icon, title, message, action }) => (
+  <div className="min-h-screen bg-stone-100/70 flex flex-col items-center justify-center p-6 text-center">
+    <div className="bg-white rounded-3xl border border-stone-200 shadow-xs p-10 max-w-md w-full space-y-4">
+      <div className="w-14 h-14 rounded-2xl bg-stone-900 text-white flex items-center justify-center mx-auto">
+        {icon}
+      </div>
+      <h1 className="text-lg font-bold text-stone-900">{title}</h1>
+      <p className="text-xs text-stone-500 leading-relaxed">{message}</p>
+      {action}
+    </div>
+  </div>
+);
+
 export default function App() {
-  const { user, dbUser, logout, isAdmin } = useAuth();
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'employees' | 'ledger' | 'audit' | 'users'>('dashboard');
-  
+  const { user, dbUser, logout, isAdmin, isStaff, isPending, loading: authLoading } = useAuth();
+  const [activeTab, setActiveTab] = useState<Tab>('dashboard');
+
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [leaveRecords, setLeaveRecords] = useState<LeaveRecord[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [dbConnected, setDbConnected] = useState(true);
+  const [dataError, setDataError] = useState<string | null>(null);
 
-  // Leave Modal State
   const [isLeaveModalOpen, setIsLeaveModalOpen] = useState(false);
-  const [modalInitialEmployeeId, setModalInitialEmployeeId] = useState<string | undefined>(undefined);
+  const [modalInitialEmployeeId, setModalInitialEmployeeId] = useState<string | undefined>();
   const [showAuthModal, setShowAuthModal] = useState(false);
+  const [showClearConfirm, setShowClearConfirm] = useState(false);
+  const [employeeToDelete, setEmployeeToDelete] = useState<Employee | null>(null);
 
-  // Register Device on Mount
+  const actor = useMemo(
+    () => ({ uid: dbUser?.uid ?? '', name: dbUser?.name ?? 'Inconnu' }),
+    [dbUser],
+  );
+
   useEffect(() => {
     registerDeviceConnection();
   }, []);
 
-  // Fetch initial data from Firestore, ensuring a fresh database
-  const loadData = async () => {
-    setIsLoading(true);
-    try {
-      const { employees: initialEmps, leaveRecords: initialLeaves } = await initializeFirestoreData();
-      
-      // If legacy demo records (e.g. emp-x, MAT-0001, etc.) were saved previously, automatically purge them
-      const hasOldDemo = initialEmps.some((e) => e.id === 'emp-x' || e.id === 'emp-101' || e.idNumber === 'MAT-0001');
-      if (hasOldDemo) {
-        console.log('Purging previous demo employees to ensure fresh database...');
-        await clearAllFirestoreData();
-        setEmployees([]);
-        setLeaveRecords([]);
-      } else {
-        setEmployees(initialEmps);
-        setLeaveRecords(initialLeaves);
+  /**
+   * Audit writes must never take down the action they describe, so a failed log
+   * is reported but swallowed.
+   */
+  const log = useCallback(
+    async (entry: Parameters<typeof addActivityLog>[0]) => {
+      try {
+        await addActivityLog(entry, actor);
+      } catch (err) {
+        console.error("Échec de l'écriture du journal d'audit:", err);
       }
-      setDbConnected(true);
+    },
+    [actor],
+  );
+
+  const loadData = useCallback(async () => {
+    setIsLoading(true);
+    setDataError(null);
+    try {
+      const { employees: emps, leaveRecords: leaves } = await fetchAllData();
+      setEmployees(emps);
+      setLeaveRecords(leaves);
     } catch (err) {
       console.error('Failed to load data from Firestore:', err);
-      setDbConnected(false);
+      setDataError(
+        'Impossible de charger les données depuis Cloud Firestore. Vérifiez votre connexion puis réessayez.',
+      );
     } finally {
       setIsLoading(false);
     }
-  };
-
-  useEffect(() => {
-    loadData();
   }, []);
 
-  const handleResetDemoData = async () => {
-    if (window.confirm('Recharger le jeu de données démo exemple (Employé X inclus) dans Cloud Firestore ?')) {
-      setIsLoading(true);
-      try {
-        await resetDemoDataToFirestore();
-        const [emps, leaves] = await Promise.all([fetchEmployees(), fetchLeaveRecords()]);
-        setEmployees(emps);
-        setLeaveRecords(leaves);
-
-        addActivityLog({
-          action: 'DATA_RESET',
-          actionLabel: 'Rechargement Démo',
-          details: 'Rechargement du jeu de données démo en base de données Cloud Firestore.',
-        });
-      } catch (err) {
-        console.error('Reset failed:', err);
-      } finally {
-        setIsLoading(false);
-      }
+  useEffect(() => {
+    if (isStaff) {
+      void loadData();
+    } else {
+      setIsLoading(false);
     }
-  };
+  }, [isStaff, loadData]);
 
   const handleClearAllData = async () => {
-    if (window.confirm('ATTENTION: Vider complètement tous les employés et congés dans Cloud Firestore ?')) {
-      setIsLoading(true);
-      try {
-        await clearAllFirestoreData();
-        setEmployees([]);
-        setLeaveRecords([]);
-
-        addActivityLog({
-          action: 'DATA_CLEARED',
-          actionLabel: 'Nettoyage Base',
-          details: 'Suppression de tous les enregistrements dans Cloud Firestore.',
-        });
-      } catch (err) {
-        console.error('Clear failed:', err);
-      } finally {
-        setIsLoading(false);
-      }
+    setShowClearConfirm(false);
+    setDataError(null);
+    try {
+      await clearAllFirestoreData();
+      setEmployees([]);
+      setLeaveRecords([]);
+      await log({
+        action: 'DATA_CLEARED',
+        actionLabel: 'Nettoyage Base',
+        details: 'Suppression de tous les employés et congés dans Cloud Firestore.',
+      });
+    } catch (err) {
+      console.error('Clear failed:', err);
+      setDataError('La suppression des données a échoué.');
     }
   };
 
-  // Handlers for Employee
   const handleBatchImportEmployees = async (importedEmployees: Employee[]) => {
+    setDataError(null);
     try {
       await batchSaveEmployees(importedEmployees);
-      const emps = await fetchEmployees();
-      setEmployees(emps);
-
-      addActivityLog({
+      setEmployees(await fetchEmployees());
+      await log({
         action: 'EMPLOYEES_IMPORTED',
         actionLabel: 'Import Multiple Employés',
-        details: `Import CSV: ${importedEmployees.length} employés synchronisés dans Cloud Firestore.`,
+        details: `Import: ${importedEmployees.length} employés synchronisés dans Cloud Firestore.`,
       });
     } catch (err) {
       console.error('Failed to batch import employees:', err);
-      alert("Erreur lors de l'import CSV dans Firestore");
+      setDataError("L'import des employés a échoué. Aucune donnée n'a été modifiée.");
     }
   };
 
@@ -155,58 +166,61 @@ export default function App() {
       createdAt: new Date().toISOString(),
     };
 
+    setDataError(null);
     try {
       const saved = await saveEmployee(newEmp);
       setEmployees((prev) => [saved, ...prev]);
-
-      addActivityLog({
+      await log({
         action: 'EMPLOYEE_CREATED',
         actionLabel: 'Création Employé',
-        details: `Ajout de l'employé ${saved.name} (${saved.contractType}) dans Cloud Firestore`,
+        details: `Ajout de l'employé ${saved.name} (${saved.contractType}).`,
         targetId: saved.id,
       });
     } catch (err) {
       console.error('Failed to add employee:', err);
+      setDataError("L'ajout de l'employé a échoué.");
     }
   };
 
   const handleUpdateEmployee = async (updatedEmp: Employee) => {
+    setDataError(null);
     try {
       const saved = await updateEmployeeDoc(updatedEmp);
       setEmployees((prev) => prev.map((emp) => (emp.id === saved.id ? saved : emp)));
-
-      addActivityLog({
+      await log({
         action: 'EMPLOYEE_UPDATED',
         actionLabel: 'Modification Employé',
-        details: `Mise à jour de ${saved.name} dans Cloud Firestore`,
+        details: `Mise à jour de ${saved.name}.`,
         targetId: saved.id,
       });
     } catch (err) {
       console.error('Failed to update employee:', err);
+      setDataError("La mise à jour de l'employé a échoué.");
     }
   };
 
-  const handleDeleteEmployee = async (id: string) => {
-    const empToDelete = employees.find((e) => e.id === id);
-    if (window.confirm(`Confirmer la suppression définitive de ${empToDelete?.name || 'cet employé'} dans Cloud Firestore ?`)) {
-      try {
-        await deleteEmployeeDoc(id);
-        setEmployees((prev) => prev.filter((emp) => emp.id !== id));
-        setLeaveRecords((prev) => prev.filter((r) => r.employeeId !== id));
+  const handleConfirmDeleteEmployee = async () => {
+    if (!employeeToDelete) return;
+    const target = employeeToDelete;
+    setEmployeeToDelete(null);
+    setDataError(null);
 
-        addActivityLog({
-          action: 'EMPLOYEE_DELETED',
-          actionLabel: 'Suppression Employé',
-          details: `Suppression de l'employé ${empToDelete?.name || id} dans Cloud Firestore.`,
-          targetId: id,
-        });
-      } catch (err) {
-        console.error('Failed to delete employee:', err);
-      }
+    try {
+      await deleteEmployeeDoc(target.id);
+      setEmployees((prev) => prev.filter((emp) => emp.id !== target.id));
+      setLeaveRecords((prev) => prev.filter((r) => r.employeeId !== target.id));
+      await log({
+        action: 'EMPLOYEE_DELETED',
+        actionLabel: 'Suppression Employé',
+        details: `Suppression de l'employé ${target.name} et de ses congés associés.`,
+        targetId: target.id,
+      });
+    } catch (err) {
+      console.error('Failed to delete employee:', err);
+      setDataError("La suppression de l'employé a échoué.");
     }
   };
 
-  // Handlers for Leave Record
   const handleAddLeaveRecord = async (recordData: Omit<LeaveRecord, 'id' | 'createdAt'>) => {
     const newRecord: LeaveRecord = {
       ...recordData,
@@ -214,36 +228,38 @@ export default function App() {
       createdAt: new Date().toISOString(),
     };
 
+    setDataError(null);
     try {
       const saved = await saveLeaveRecord(newRecord);
       setLeaveRecords((prev) => [saved, ...prev]);
-
       const targetEmp = employees.find((e) => e.id === recordData.employeeId);
-      addActivityLog({
+      await log({
         action: 'LEAVE_ADDED',
         actionLabel: 'Saisie de Congé',
-        details: `Enregistrement de ${saved.daysCount}j pour ${targetEmp?.name || recordData.employeeId} (${saved.startDate} -> ${saved.endDate}) dans Cloud Firestore`,
+        details: `Enregistrement de ${saved.daysCount}j pour ${targetEmp?.name || recordData.employeeId} (${saved.startDate} -> ${saved.endDate}).`,
         targetId: saved.id,
       });
     } catch (err) {
       console.error('Failed to add leave record:', err);
+      setDataError("L'enregistrement du congé a échoué.");
     }
   };
 
   const handleDeleteLeaveRecord = async (id: string) => {
     const recToDelete = leaveRecords.find((r) => r.id === id);
+    setDataError(null);
     try {
       await deleteLeaveRecordDoc(id);
       setLeaveRecords((prev) => prev.filter((r) => r.id !== id));
-
-      addActivityLog({
+      await log({
         action: 'LEAVE_DELETED',
         actionLabel: 'Annulation Congé',
-        details: `Annulation du congé ID ${id} (${recToDelete?.daysCount || 0} jours) dans Cloud Firestore.`,
+        details: `Annulation du congé ${id} (${recToDelete?.daysCount ?? 0} jours).`,
         targetId: id,
       });
     } catch (err) {
       console.error('Failed to delete leave record:', err);
+      setDataError("L'annulation du congé a échoué.");
     }
   };
 
@@ -252,13 +268,103 @@ export default function App() {
     setIsLeaveModalOpen(true);
   };
 
-  const handleSelectEmployeeDetail = (empId: string) => {
-    setActiveTab('employees');
-  };
+  if (authLoading) {
+    return (
+      <Gate
+        icon={<RefreshCw className="w-6 h-6 animate-spin text-amber-400" />}
+        title="Chargement"
+        message="Vérification de votre session en cours..."
+      />
+    );
+  }
+
+  if (!user) {
+    return (
+      <>
+        <Gate
+          icon={<Building2 className="w-6 h-6 text-amber-400" />}
+          title="Gestion des Congés & RH"
+          message="Cette application contient des données RH confidentielles. Veuillez vous connecter pour continuer."
+          action={
+            <button
+              onClick={() => setShowAuthModal(true)}
+              className="inline-flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold px-4 py-2.5 rounded-xl transition-all cursor-pointer"
+            >
+              <LogIn className="w-4 h-4" />
+              Connexion
+            </button>
+          }
+        />
+        {showAuthModal && <AuthModal onClose={() => setShowAuthModal(false)} />}
+      </>
+    );
+  }
+
+  if (isPending) {
+    return (
+      <Gate
+        icon={<Clock className="w-6 h-6 text-amber-400" />}
+        title="Compte en attente de validation"
+        message="Votre compte a bien été créé. Un administrateur doit vous attribuer un rôle avant que vous puissiez accéder aux données RH."
+        action={
+          <button
+            onClick={() => void logout()}
+            className="inline-flex items-center gap-1.5 text-stone-600 hover:text-stone-900 text-xs font-bold px-4 py-2.5 rounded-xl hover:bg-stone-100 transition-all cursor-pointer"
+          >
+            <LogOut className="w-4 h-4" />
+            Se déconnecter
+          </button>
+        }
+      />
+    );
+  }
+
+  if (!isStaff) {
+    return (
+      <Gate
+        icon={<Lock className="w-6 h-6 text-amber-400" />}
+        title="Accès non autorisé"
+        message="Votre compte n'a pas les droits nécessaires pour consulter les données RH. Contactez un administrateur."
+        action={
+          <button
+            onClick={() => void logout()}
+            className="inline-flex items-center gap-1.5 text-stone-600 hover:text-stone-900 text-xs font-bold px-4 py-2.5 rounded-xl hover:bg-stone-100 transition-all cursor-pointer"
+          >
+            <LogOut className="w-4 h-4" />
+            Se déconnecter
+          </button>
+        }
+      />
+    );
+  }
+
+  const tabs: { id: Tab; label: string; icon: React.ReactNode; adminOnly?: boolean }[] = [
+    { id: 'dashboard', label: 'Tableau de Bord', icon: <LayoutDashboard className="w-4 h-4" /> },
+    {
+      id: 'employees',
+      label: `Employés (${employees.length})`,
+      icon: <Users className="w-4 h-4" />,
+    },
+    {
+      id: 'ledger',
+      label: `Journal des Congés (${leaveRecords.length})`,
+      icon: <FileText className="w-4 h-4" />,
+    },
+    {
+      id: 'audit',
+      label: 'Audit & Appareils',
+      icon: <ShieldCheck className="w-4 h-4 text-emerald-600" />,
+    },
+    {
+      id: 'users',
+      label: 'Utilisateurs',
+      icon: <UserIcon className="w-4 h-4 text-indigo-600" />,
+      adminOnly: true,
+    },
+  ];
 
   return (
     <div className="min-h-screen bg-stone-100/70 text-stone-800 flex flex-col justify-between font-sans selection:bg-amber-100 selection:text-amber-900">
-      {/* Header Bar */}
       <header className="border-b border-stone-200/80 bg-white sticky top-0 z-30 shadow-2xs">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between gap-2">
           <div className="flex items-center gap-3">
@@ -266,7 +372,9 @@ export default function App() {
               <Building2 className="w-5 h-5 text-amber-400" />
             </div>
             <div>
-              <span className="font-bold text-stone-900 text-base tracking-tight">Gestion des Congés & RH</span>
+              <span className="font-bold text-stone-900 text-base tracking-tight">
+                Gestion des Congés & RH
+              </span>
               <div className="flex items-center gap-2 mt-0.5">
                 <span className="inline-flex items-center gap-1 text-2xs bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded font-mono font-bold border border-indigo-200">
                   <Database className="w-3 h-3 text-indigo-600" />
@@ -281,16 +389,15 @@ export default function App() {
           </div>
 
           <div className="flex items-center gap-2 sm:gap-3">
-            {/* Refresh Button */}
             <button
-              onClick={loadData}
+              onClick={() => void loadData()}
               title="Rafraîchir les données Cloud Firestore"
+              aria-label="Rafraîchir les données"
               className="p-2 text-stone-500 hover:text-stone-900 hover:bg-stone-100 rounded-xl transition-all cursor-pointer"
             >
               <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin text-amber-600' : ''}`} />
             </button>
 
-            {/* Quick Add Leave Button */}
             <button
               id="btn-quick-add-absence"
               onClick={() => handleOpenLeaveModal()}
@@ -300,133 +407,68 @@ export default function App() {
               <span className="hidden sm:inline">Nouveau Congé</span>
             </button>
 
-            {/* Authentication Status / Button */}
-            {user ? (
-              <div className="flex items-center gap-2 bg-stone-100 p-1.5 rounded-xl border border-stone-200">
-                <div className="w-7 h-7 rounded-lg bg-indigo-600 text-white flex items-center justify-center font-bold text-xs">
-                  {user.displayName ? user.displayName[0].toUpperCase() : 'U'}
-                </div>
-                <div className="hidden lg:block text-left pr-1">
-                  <p className="text-2xs font-bold text-stone-900 leading-tight truncate max-w-[120px]">
-                    {user.displayName || user.email}
-                  </p>
-                  <p className="text-[10px] text-emerald-600 font-semibold">Connecté ({dbUser?.role || 'Utilisateur'})</p>
-                </div>
-                <button
-                  onClick={logout}
-                  title="Se déconnecter"
-                  className="p-1.5 text-stone-500 hover:text-red-600 rounded-lg hover:bg-stone-200 transition-all cursor-pointer"
-                >
-                  <LogOut className="w-4 h-4" />
-                </button>
+            <div className="flex items-center gap-2 bg-stone-100 p-1.5 rounded-xl border border-stone-200">
+              <div className="w-7 h-7 rounded-lg bg-indigo-600 text-white flex items-center justify-center font-bold text-xs">
+                {(dbUser?.name || user.email || 'U')[0].toUpperCase()}
               </div>
-            ) : (
+              <div className="hidden lg:block text-left pr-1">
+                <p className="text-2xs font-bold text-stone-900 leading-tight truncate max-w-[120px]">
+                  {dbUser?.name || user.email}
+                </p>
+                <p className="text-[10px] text-emerald-600 font-semibold">
+                  Connecté ({dbUser?.role})
+                </p>
+              </div>
               <button
-                onClick={() => setShowAuthModal(true)}
-                className="inline-flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold px-3.5 py-2 rounded-xl transition-all shadow-2xs cursor-pointer active:scale-98"
+                onClick={() => void logout()}
+                title="Se déconnecter"
+                aria-label="Se déconnecter"
+                className="p-1.5 text-stone-500 hover:text-red-600 rounded-lg hover:bg-stone-200 transition-all cursor-pointer"
               >
-                <LogIn className="w-4 h-4" />
-                <span>Connexion</span>
+                <LogOut className="w-4 h-4" />
               </button>
-            )}
+            </div>
           </div>
         </div>
 
-        {/* Navigation Tabs */}
-        <div className="border-t border-stone-100 bg-stone-50/50">
+        <nav
+          className="border-t border-stone-100 bg-stone-50/50"
+          aria-label="Navigation principale"
+        >
           <div className="max-w-7xl mx-auto px-4 sm:px-6 flex items-center gap-1 overflow-x-auto">
-            <button
-              id="tab-dashboard"
-              onClick={() => setActiveTab('dashboard')}
-              className={`flex items-center gap-2 px-4 py-3 text-xs font-bold border-b-2 transition-all cursor-pointer shrink-0 ${
-                activeTab === 'dashboard'
-                  ? 'border-stone-900 text-stone-900 bg-white'
-                  : 'border-transparent text-stone-500 hover:text-stone-800 hover:bg-stone-100/50'
-              }`}
-            >
-              <LayoutDashboard className="w-4 h-4" />
-              Tableau de Bord
-            </button>
-
-            <button
-              id="tab-employees"
-              onClick={() => setActiveTab('employees')}
-              className={`flex items-center gap-2 px-4 py-3 text-xs font-bold border-b-2 transition-all cursor-pointer shrink-0 ${
-                activeTab === 'employees'
-                  ? 'border-stone-900 text-stone-900 bg-white'
-                  : 'border-transparent text-stone-500 hover:text-stone-800 hover:bg-stone-100/50'
-              }`}
-            >
-              <Users className="w-4 h-4" />
-              Employés ({employees.length})
-            </button>
-
-            <button
-              id="tab-ledger"
-              onClick={() => setActiveTab('ledger')}
-              className={`flex items-center gap-2 px-4 py-3 text-xs font-bold border-b-2 transition-all cursor-pointer shrink-0 ${
-                activeTab === 'ledger'
-                  ? 'border-stone-900 text-stone-900 bg-white'
-                  : 'border-transparent text-stone-500 hover:text-stone-800 hover:bg-stone-100/50'
-              }`}
-            >
-              <FileText className="w-4 h-4" />
-              Journal des Congés ({leaveRecords.length})
-            </button>
-
-            <button
-              id="tab-audit"
-              onClick={() => setActiveTab('audit')}
-              className={`flex items-center gap-2 px-4 py-3 text-xs font-bold border-b-2 transition-all cursor-pointer shrink-0 ${
-                activeTab === 'audit'
-                  ? 'border-stone-900 text-stone-900 bg-white'
-                  : 'border-transparent text-stone-500 hover:text-stone-800 hover:bg-stone-100/50'
-              }`}
-            >
-              <ShieldCheck className="w-4 h-4 text-emerald-600" />
-              Audit & Appareils
-            </button>
-
-            {isAdmin && (
-              <button
-                id="tab-users"
-                onClick={() => setActiveTab('users')}
-                className={`flex items-center gap-2 px-4 py-3 text-xs font-bold border-b-2 transition-all cursor-pointer shrink-0 ${
-                  activeTab === 'users'
-                    ? 'border-stone-900 text-stone-900 bg-white'
-                    : 'border-transparent text-stone-500 hover:text-stone-800 hover:bg-stone-100/50'
-                }`}
-              >
-                <UserIcon className="w-4 h-4 text-indigo-600" />
-                Utilisateurs
-              </button>
-            )}
+            {tabs
+              .filter((tab) => !tab.adminOnly || isAdmin)
+              .map((tab) => (
+                <button
+                  key={tab.id}
+                  id={`tab-${tab.id}`}
+                  onClick={() => setActiveTab(tab.id)}
+                  aria-current={activeTab === tab.id ? 'page' : undefined}
+                  className={`flex items-center gap-2 px-4 py-3 text-xs font-bold border-b-2 transition-all cursor-pointer shrink-0 ${
+                    activeTab === tab.id
+                      ? 'border-stone-900 text-stone-900 bg-white'
+                      : 'border-transparent text-stone-500 hover:text-stone-800 hover:bg-stone-100/50'
+                  }`}
+                >
+                  {tab.icon}
+                  {tab.label}
+                </button>
+              ))}
           </div>
-        </div>
+        </nav>
       </header>
 
-      {/* Database Banner */}
-      <div className="bg-indigo-900 text-indigo-100 text-xs py-2 px-4 border-b border-indigo-800">
-        <div className="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-2">
-          <div className="flex items-center gap-2">
-            <Database className="w-4 h-4 text-indigo-300 animate-pulse" />
-            <span>
-              <strong>Base Cloud Firestore Active:</strong> Toutes les données (Employés, Registre des Congés, Audit) sont centralisées et synchronisées entre tous vos appareils connectés.
-            </span>
-          </div>
-          <div className="flex items-center gap-3">
-            <span className="bg-indigo-800/80 px-2 py-0.5 rounded text-[11px] border border-indigo-700/60 font-mono">
-              Base: Cloud Firestore
-            </span>
-            <span className="bg-emerald-500/20 text-emerald-200 px-2 py-0.5 rounded text-[11px] border border-emerald-500/40 font-mono">
-              ● Connecté
-            </span>
-          </div>
-        </div>
-      </div>
-
-      {/* Main Container */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 py-8 flex-1 w-full">
+        {dataError && (
+          <div
+            role="alert"
+            className="mb-6 p-3.5 bg-red-50 border border-red-200 rounded-xl flex items-start gap-2.5 text-red-700 text-xs font-medium"
+          >
+            <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-red-600" />
+            <p className="leading-relaxed">{dataError}</p>
+          </div>
+        )}
+
         {isLoading ? (
           <div className="flex flex-col items-center justify-center py-16 gap-3 text-stone-500">
             <RefreshCw className="w-8 h-8 animate-spin text-amber-600" />
@@ -439,7 +481,7 @@ export default function App() {
                 employees={employees}
                 leaveRecords={leaveRecords}
                 onOpenLeaveModal={handleOpenLeaveModal}
-                onSelectEmployee={handleSelectEmployeeDetail}
+                onSelectEmployee={() => setActiveTab('employees')}
               />
             )}
 
@@ -449,9 +491,12 @@ export default function App() {
                 leaveRecords={leaveRecords}
                 onAddEmployee={handleAddEmployee}
                 onUpdateEmployee={handleUpdateEmployee}
-                onDeleteEmployee={handleDeleteEmployee}
+                onDeleteEmployee={(id) =>
+                  setEmployeeToDelete(employees.find((e) => e.id === id) ?? null)
+                }
                 onBatchImportEmployees={handleBatchImportEmployees}
                 onOpenLeaveModal={handleOpenLeaveModal}
+                canDelete={isAdmin}
               />
             )}
 
@@ -466,25 +511,17 @@ export default function App() {
 
             {activeTab === 'audit' && (
               <AuditLogsManager
-                onResetDemoData={handleResetDemoData}
-                onClearAllData={handleClearAllData}
+                onClearAllData={isAdmin ? () => setShowClearConfirm(true) : undefined}
                 employeeCount={employees.length}
                 leaveRecordCount={leaveRecords.length}
               />
             )}
 
-            {activeTab === 'users' && isAdmin && (
-              <UserManager />
-            )}
+            {activeTab === 'users' && isAdmin && <UserManager />}
           </>
         )}
       </main>
 
-      {showAuthModal && (
-        <AuthModal onClose={() => setShowAuthModal(false)} />
-      )}
-
-      {/* Admin Leave Modal */}
       <LeaveLedgerModal
         isOpen={isLeaveModalOpen}
         onClose={() => setIsLeaveModalOpen(false)}
@@ -494,14 +531,48 @@ export default function App() {
         onAddLeaveRecord={handleAddLeaveRecord}
       />
 
-      {/* Footer */}
+      {employeeToDelete && (
+        <ConfirmModal
+          isOpen
+          type="danger"
+          title={`Supprimer ${employeeToDelete.name} ?`}
+          subtitle="Cette action est définitive."
+          warningMessage="Tous les congés enregistrés pour cet employé seront également supprimés."
+          confirmLabel="Oui, supprimer"
+          cancelLabel="Annuler"
+          summaryItems={[
+            { label: 'Matricule', value: employeeToDelete.idNumber },
+            { label: 'Nom', value: employeeToDelete.name },
+            { label: 'Poste', value: employeeToDelete.position },
+          ]}
+          onConfirm={() => void handleConfirmDeleteEmployee()}
+          onCancel={() => setEmployeeToDelete(null)}
+        />
+      )}
+
+      <ConfirmModal
+        isOpen={showClearConfirm}
+        type="danger"
+        title="Vider toute la base de données ?"
+        subtitle="Tous les employés et tous les congés seront supprimés de Cloud Firestore."
+        warningMessage="Cette action est irréversible et affecte tous les utilisateurs connectés."
+        confirmLabel="Oui, tout supprimer"
+        cancelLabel="Annuler"
+        summaryItems={[
+          { label: 'Employés supprimés', value: employees.length },
+          { label: 'Congés supprimés', value: leaveRecords.length },
+        ]}
+        onConfirm={() => void handleClearAllData()}
+        onCancel={() => setShowClearConfirm(false)}
+      />
+
       <footer className="border-t border-stone-200 bg-white text-xs text-stone-500 py-4 px-6 mt-12">
         <div className="max-w-7xl mx-auto flex flex-col sm:flex-row justify-between items-center gap-2">
           <div className="flex items-center gap-2">
             <CheckCircle2 className="w-4 h-4 text-emerald-600" />
             <span>Gestion RH, Calculateur de Solde & Base Cloud Firestore Centralisée</span>
           </div>
-          <span className="font-mono text-stone-400">Google AI Studio • Cloud Firestore</span>
+          <span className="font-mono text-stone-400">Cloud Firestore</span>
         </div>
       </footer>
     </div>

@@ -1,14 +1,5 @@
 import React from 'react';
-import { 
-  AlertTriangle, 
-  CheckCircle2, 
-  HelpCircle, 
-  X, 
-  Save, 
-  Trash2, 
-  ArrowRight,
-  ShieldAlert
-} from 'lucide-react';
+import { AlertTriangle, CheckCircle2, HelpCircle, X, Save, Trash2 } from 'lucide-react';
 
 export interface ConfirmModalProps {
   isOpen: boolean;
@@ -82,7 +73,7 @@ export const ConfirmModal: React.FC<ConfirmModalProps> = ({
   };
 
   return (
-    <div 
+    <div
       className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-stone-900/60 backdrop-blur-xs animate-in fade-in duration-150"
       onClick={onCancel}
     >
@@ -97,14 +88,8 @@ export const ConfirmModal: React.FC<ConfirmModalProps> = ({
               {getIcon()}
             </div>
             <div>
-              <h3 className="text-base font-bold leading-snug">
-                {title}
-              </h3>
-              {subtitle && (
-                <p className="text-xs opacity-80 mt-0.5 leading-relaxed">
-                  {subtitle}
-                </p>
-              )}
+              <h3 className="text-base font-bold leading-snug">{title}</h3>
+              {subtitle && <p className="text-xs opacity-80 mt-0.5 leading-relaxed">{subtitle}</p>}
             </div>
           </div>
           <button
@@ -129,9 +114,7 @@ export const ConfirmModal: React.FC<ConfirmModalProps> = ({
                       {item.icon}
                       {item.label}
                     </span>
-                    <span className="font-bold text-stone-900 text-right">
-                      {item.value}
-                    </span>
+                    <span className="font-bold text-stone-900 text-right">{item.value}</span>
                   </div>
                 ))}
               </div>

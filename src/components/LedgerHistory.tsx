@@ -1,17 +1,16 @@
 import React, { useState } from 'react';
-import { 
-  FileText, 
-  Trash2, 
-  Search, 
-  Calendar, 
-  Plus, 
+import {
+  FileText,
+  Trash2,
+  Search,
+  Calendar,
+  Plus,
   Banknote,
   Download,
   Globe,
   Building2,
-  Filter,
   Clock,
-  FileSpreadsheet
+  FileSpreadsheet,
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { Employee, EmployeeStatus, LeaveRecord, LeaveType } from '../types';
@@ -37,7 +36,11 @@ export const LedgerHistory: React.FC<LedgerHistoryProps> = ({
   const [searchTerm, setSearchTerm] = useState<string>('');
 
   // Confirmation modal for deleting records
-  const [recordToDelete, setRecordToDelete] = useState<{ id: string; record: LeaveRecord; emp?: Employee } | null>(null);
+  const [recordToDelete, setRecordToDelete] = useState<{
+    id: string;
+    record: LeaveRecord;
+    emp?: Employee;
+  } | null>(null);
 
   const employeeMap = new Map<string, Employee>();
   employees.forEach((emp) => employeeMap.set(emp.id, emp));
@@ -48,22 +51,27 @@ export const LedgerHistory: React.FC<LedgerHistoryProps> = ({
     const matchesStatus = selectedStatus === 'ALL' || emp?.status === selectedStatus;
     const matchesType = selectedLeaveType === 'ALL' || rec.leaveType === selectedLeaveType;
     const matchesSearch =
-      (emp?.name.toLowerCase().includes(searchTerm.toLowerCase()) || false) ||
-      (emp?.idNumber?.toLowerCase().includes(searchTerm.toLowerCase()) || false) ||
-      (emp?.matriculeGL?.toLowerCase().includes(searchTerm.toLowerCase()) || false) ||
-      (emp?.position?.toLowerCase().includes(searchTerm.toLowerCase()) || false) ||
-      (rec.notes?.toLowerCase().includes(searchTerm.toLowerCase()) || false);
+      emp?.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      false ||
+      emp?.idNumber?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      false ||
+      emp?.matriculeGL?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      false ||
+      emp?.position?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      false ||
+      rec.notes?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      false;
     return matchesEmp && matchesStatus && matchesType && matchesSearch;
   });
 
   // Tri par date décroissante
   const sortedRecords = [...filteredRecords].sort(
-    (a, b) => new Date(b.startDate).getTime() - new Date(a.startDate).getTime()
+    (a, b) => new Date(b.startDate).getTime() - new Date(a.startDate).getTime(),
   );
 
   const handleExportExcel = () => {
     if (sortedRecords.length === 0) {
-      alert("Aucun enregistrement de congé à exporter dans la liste filtrée.");
+      alert('Aucun enregistrement de congé à exporter dans la liste filtrée.');
       return;
     }
 
@@ -80,14 +88,19 @@ export const LedgerHistory: React.FC<LedgerHistoryProps> = ({
       'Date Fin',
       'Nombre de Jours',
       'Rémunération',
-      'Remarques / Justificatifs'
+      'Remarques / Justificatifs',
     ];
 
     const rows = sortedRecords.map((rec) => {
       const emp = employeeMap.get(rec.employeeId);
       const leaveLabel = LEAVE_TYPE_LABELS[rec.leaveType] || rec.leaveType;
       const statusLabel = emp?.status === 'EXPAT' ? 'Expatrié (EXPAT)' : 'Personnel Local (LOCAL)';
-      const contractLabel = emp?.contractType === 'TYPE_A' ? 'Type A (30j/6m)' : emp?.contractType === 'TYPE_B' ? 'Type B (30j/1an)' : 'Inconnu';
+      const contractLabel =
+        emp?.contractType === 'TYPE_A'
+          ? 'Type A (30j/6m)'
+          : emp?.contractType === 'TYPE_B'
+            ? 'Type B (30j/1an)'
+            : 'Inconnu';
       const remunLabel = rec.isPaid !== false ? 'Payé (Rémunéré)' : 'Sans Solde (Non payé)';
 
       return [
@@ -103,7 +116,7 @@ export const LedgerHistory: React.FC<LedgerHistoryProps> = ({
         rec.endDate,
         rec.daysCount,
         remunLabel,
-        rec.notes || ''
+        rec.notes || '',
       ];
     });
 
@@ -120,7 +133,7 @@ export const LedgerHistory: React.FC<LedgerHistoryProps> = ({
       { wch: 16 },
       { wch: 18 },
       { wch: 22 },
-      { wch: 32 }
+      { wch: 32 },
     ];
 
     XLSX.utils.book_append_sheet(wb, ws, 'Journal Conges');
@@ -129,24 +142,24 @@ export const LedgerHistory: React.FC<LedgerHistoryProps> = ({
 
   const handleExportCSV = () => {
     if (sortedRecords.length === 0) {
-      alert("Aucun enregistrement de congé à exporter dans la liste filtrée.");
+      alert('Aucun enregistrement de congé à exporter dans la liste filtrée.');
       return;
     }
 
     const headers = [
-      "N° Matricule RH",
-      "Matricule GL",
-      "Nom & Prénom",
-      "Nationalité",
-      "Poste / Fonction",
-      "Statut Contractuel",
-      "Type de Contrat",
-      "Type de Congé",
-      "Date Début",
-      "Date Fin",
-      "Nombre de Jours",
-      "Rémunération",
-      "Remarques / Justificatifs"
+      'N° Matricule RH',
+      'Matricule GL',
+      'Nom & Prénom',
+      'Nationalité',
+      'Poste / Fonction',
+      'Statut Contractuel',
+      'Type de Contrat',
+      'Type de Congé',
+      'Date Début',
+      'Date Fin',
+      'Nombre de Jours',
+      'Rémunération',
+      'Remarques / Justificatifs',
     ];
 
     const escapeCSV = (str: string | number | undefined | null) => {
@@ -159,7 +172,12 @@ export const LedgerHistory: React.FC<LedgerHistoryProps> = ({
       const emp = employeeMap.get(rec.employeeId);
       const leaveLabel = LEAVE_TYPE_LABELS[rec.leaveType] || rec.leaveType;
       const statusLabel = emp?.status === 'EXPAT' ? 'Expatrié (EXPAT)' : 'Personnel Local (LOCAL)';
-      const contractLabel = emp?.contractType === 'TYPE_A' ? 'Type A (30j/6m)' : emp?.contractType === 'TYPE_B' ? 'Type B (30j/1an)' : 'Inconnu';
+      const contractLabel =
+        emp?.contractType === 'TYPE_A'
+          ? 'Type A (30j/6m)'
+          : emp?.contractType === 'TYPE_B'
+            ? 'Type B (30j/1an)'
+            : 'Inconnu';
       const remunLabel = rec.isPaid !== false ? 'Payé (Rémunéré)' : 'Sans Solde (Non payé)';
 
       return [
@@ -175,7 +193,7 @@ export const LedgerHistory: React.FC<LedgerHistoryProps> = ({
         escapeCSV(rec.endDate),
         escapeCSV(rec.daysCount),
         escapeCSV(remunLabel),
-        escapeCSV(rec.notes || '')
+        escapeCSV(rec.notes || ''),
       ].join(';');
     });
 
@@ -203,7 +221,9 @@ export const LedgerHistory: React.FC<LedgerHistoryProps> = ({
       {/* Top Banner */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white p-6 rounded-2xl border border-stone-200/80 shadow-xs">
         <div>
-          <h2 className="text-xl font-bold text-stone-900">Journal Comptable des Congés & Saisies Passées</h2>
+          <h2 className="text-xl font-bold text-stone-900">
+            Journal Comptable des Congés & Saisies Passées
+          </h2>
           <p className="text-xs text-stone-500 mt-0.5">
             Historique complet avec N° Matricule, Poste, Statut (Local / Expatrié) et justification.
           </p>
@@ -259,10 +279,12 @@ export const LedgerHistory: React.FC<LedgerHistoryProps> = ({
         <div className="flex flex-wrap items-center gap-2.5">
           {/* Statut Filter */}
           <div className="flex items-center gap-1.5 text-xs">
-            <span className="font-bold text-stone-400 uppercase text-[10px] tracking-wider">Statut:</span>
+            <span className="font-bold text-stone-400 uppercase text-[10px] tracking-wider">
+              Statut:
+            </span>
             <select
               value={selectedStatus}
-              onChange={(e) => setSelectedStatus(e.target.value as any)}
+              onChange={(e) => setSelectedStatus(e.target.value as 'ALL' | EmployeeStatus)}
               className="px-2.5 py-1.5 rounded-lg border border-stone-200 bg-stone-50 text-stone-900 text-xs font-semibold focus:bg-white focus:outline-none"
             >
               <option value="ALL">Tous les statuts</option>
@@ -273,7 +295,9 @@ export const LedgerHistory: React.FC<LedgerHistoryProps> = ({
 
           {/* Employé Filter */}
           <div className="flex items-center gap-1.5 text-xs">
-            <span className="font-bold text-stone-400 uppercase text-[10px] tracking-wider">Employé:</span>
+            <span className="font-bold text-stone-400 uppercase text-[10px] tracking-wider">
+              Employé:
+            </span>
             <select
               value={selectedEmployeeId}
               onChange={(e) => setSelectedEmployeeId(e.target.value)}
@@ -290,7 +314,9 @@ export const LedgerHistory: React.FC<LedgerHistoryProps> = ({
 
           {/* Leave Type Filter */}
           <div className="flex items-center gap-1.5 text-xs">
-            <span className="font-bold text-stone-400 uppercase text-[10px] tracking-wider">Type:</span>
+            <span className="font-bold text-stone-400 uppercase text-[10px] tracking-wider">
+              Type:
+            </span>
             <select
               value={selectedLeaveType}
               onChange={(e) => setSelectedLeaveType(e.target.value)}
@@ -314,7 +340,10 @@ export const LedgerHistory: React.FC<LedgerHistoryProps> = ({
             <FileText className="w-10 h-10 text-stone-300 mx-auto" />
             <p className="text-stone-700 font-semibold text-base">Aucune saisie trouvée</p>
             <p className="text-stone-400 text-xs max-w-sm mx-auto">
-              {searchTerm || selectedEmployeeId !== 'ALL' || selectedStatus !== 'ALL' || selectedLeaveType !== 'ALL'
+              {searchTerm ||
+              selectedEmployeeId !== 'ALL' ||
+              selectedStatus !== 'ALL' ||
+              selectedLeaveType !== 'ALL'
                 ? 'Essayez de modifier vos filtres de recherche.'
                 : 'Commencez par enregistrer une première demande ou congé au journal.'}
             </p>
@@ -353,7 +382,10 @@ export const LedgerHistory: React.FC<LedgerHistoryProps> = ({
                               </span>
                             </div>
                             <span className="text-2xs text-stone-400">
-                              Contrat {emp.contractType === 'TYPE_A' ? 'Type A (30j/6m)' : 'Type B (30j/1an)'}
+                              Contrat{' '}
+                              {emp.contractType === 'TYPE_A'
+                                ? 'Type A (30j/6m)'
+                                : 'Type B (30j/1an)'}
                             </span>
                           </div>
                         ) : (
@@ -365,7 +397,9 @@ export const LedgerHistory: React.FC<LedgerHistoryProps> = ({
                       <td className="py-4 px-6">
                         {emp ? (
                           <div className="space-y-1">
-                            <p className="text-xs text-stone-700 font-medium">{emp.position || 'Collaborateur'}</p>
+                            <p className="text-xs text-stone-700 font-medium">
+                              {emp.position || 'Collaborateur'}
+                            </p>
                             {emp.status === 'EXPAT' ? (
                               <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-100 text-purple-900 border border-purple-300">
                                 <Globe className="w-3 h-3 text-purple-700" />
@@ -385,7 +419,9 @@ export const LedgerHistory: React.FC<LedgerHistoryProps> = ({
 
                       {/* Type */}
                       <td className="py-4 px-6">
-                        <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold border ${colors.bg} ${colors.text} ${colors.border}`}>
+                        <span
+                          className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold border ${colors.bg} ${colors.text} ${colors.border}`}
+                        >
                           {LEAVE_TYPE_LABELS[rec.leaveType]}
                         </span>
                       </td>
@@ -394,7 +430,8 @@ export const LedgerHistory: React.FC<LedgerHistoryProps> = ({
                       <td className="py-4 px-6 text-xs text-stone-600">
                         <div className="flex items-center gap-1 font-medium">
                           <Calendar className="w-3.5 h-3.5 text-stone-400" />
-                          {new Date(rec.startDate).toLocaleDateString('fr-FR')} → {new Date(rec.endDate).toLocaleDateString('fr-FR')}
+                          {new Date(rec.startDate).toLocaleDateString('fr-FR')} →{' '}
+                          {new Date(rec.endDate).toLocaleDateString('fr-FR')}
                         </div>
                       </td>
 
@@ -451,26 +488,30 @@ export const LedgerHistory: React.FC<LedgerHistoryProps> = ({
           confirmLabel="Oui, supprimer la saisie"
           cancelLabel="Annuler"
           summaryItems={[
-            { 
-              label: "Collaborateur", 
-              value: recordToDelete.emp ? `[${recordToDelete.emp.idNumber || 'SANS-MAT'}] ${recordToDelete.emp.name}` : "Inconnu",
-              icon: <Building2 className="w-3.5 h-3.5 text-stone-400" />
+            {
+              label: 'Collaborateur',
+              value: recordToDelete.emp
+                ? `[${recordToDelete.emp.idNumber || 'SANS-MAT'}] ${recordToDelete.emp.name}`
+                : 'Inconnu',
+              icon: <Building2 className="w-3.5 h-3.5 text-stone-400" />,
             },
-            { 
-              label: "Type de Congé", 
-              value: LEAVE_TYPE_LABELS[recordToDelete.record.leaveType] || recordToDelete.record.leaveType,
-              icon: <FileText className="w-3.5 h-3.5 text-stone-400" />
+            {
+              label: 'Type de Congé',
+              value:
+                LEAVE_TYPE_LABELS[recordToDelete.record.leaveType] ||
+                recordToDelete.record.leaveType,
+              icon: <FileText className="w-3.5 h-3.5 text-stone-400" />,
             },
-            { 
-              label: "Période", 
+            {
+              label: 'Période',
               value: `Du ${new Date(recordToDelete.record.startDate).toLocaleDateString('fr-FR')} au ${new Date(recordToDelete.record.endDate).toLocaleDateString('fr-FR')}`,
-              icon: <Calendar className="w-3.5 h-3.5 text-stone-400" />
+              icon: <Calendar className="w-3.5 h-3.5 text-stone-400" />,
             },
-            { 
-              label: "Durée", 
+            {
+              label: 'Durée',
               value: `${recordToDelete.record.daysCount} jour(s)`,
-              icon: <Clock className="w-3.5 h-3.5 text-stone-400" />
-            }
+              icon: <Clock className="w-3.5 h-3.5 text-stone-400" />,
+            },
           ]}
           onConfirm={handleExecuteDelete}
           onCancel={() => setRecordToDelete(null)}

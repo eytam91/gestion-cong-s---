@@ -1,10 +1,28 @@
-import { ActivityLog, DeviceSession } from '../types';
+import {
+  collection,
+  doc,
+  getDocs,
+  limit as fsLimit,
+  orderBy,
+  query,
+  setDoc,
+} from 'firebase/firestore';
+import { db } from '../lib/firebase';
+import { ActivityLog, AuditActor, DeviceSession } from '../types';
 
 const DEVICE_ID_KEY = 'app_device_id_v1';
 const DEVICE_SESSIONS_KEY = 'app_device_sessions_v1';
-const ACTIVITY_LOGS_KEY = 'app_activity_logs_v1';
+const AUDIT_LOGS_COLL = 'audit_logs';
 
-// Generate or retrieve persistent device unique identifier
+function readJson<T>(key: string, fallback: T): T {
+  try {
+    const raw = localStorage.getItem(key);
+    return raw ? (JSON.parse(raw) as T) : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
 export function getOrCreateDeviceId(): string {
   let devId = localStorage.getItem(DEVICE_ID_KEY);
   if (!devId) {
@@ -14,71 +32,47 @@ export function getOrCreateDeviceId(): string {
   return devId;
 }
 
-// Get device information from browser APIs
 export function getDeviceDetails(): Omit<DeviceSession, 'firstConnectedAt' | 'lastActiveAt'> {
   const deviceId = getOrCreateDeviceId();
   const ua = navigator.userAgent || '';
-  
-  let deviceType: 'Desktop' | 'Mobile' | 'Tablet' = 'Desktop';
+
+  let deviceType: DeviceSession['deviceType'] = 'Desktop';
   if (/iPad|tablet|PlayBook|Silk/i.test(ua)) {
     deviceType = 'Tablet';
-  } else if (/Mobile|Android|iP(hone|od)|IEMobile|BlackBerry|Kindle|NetFront|Silk-Accelerated/i.test(ua)) {
+  } else if (/Mobile|Android|iP(hone|od)|IEMobile|BlackBerry|Kindle|NetFront/i.test(ua)) {
     deviceType = 'Mobile';
   } else if (window.innerWidth < 768) {
     deviceType = 'Mobile';
   }
 
-  const screenResolution = `${window.screen?.width || window.innerWidth}x${window.screen?.height || window.innerHeight}`;
-  const platform = navigator.platform || (navigator as any).userAgentData?.platform || 'Navigateur Web';
-  const language = navigator.language || 'fr-FR';
-
   return {
     deviceId,
     userAgent: ua,
-    platform,
-    screenResolution,
+    platform: navigator.platform || 'Navigateur Web',
+    screenResolution: `${window.screen?.width || window.innerWidth}x${window.screen?.height || window.innerHeight}`,
     deviceType,
-    language,
+    language: navigator.language || 'fr-FR',
   };
 }
 
-// Record device session connection
+/**
+ * Device sessions stay in localStorage on purpose: they describe this browser,
+ * not the tenant, and are useful before anyone has signed in.
+ */
 export function registerDeviceConnection(): DeviceSession {
   const info = getDeviceDetails();
   const nowIso = new Date().toISOString();
-
-  let sessions: DeviceSession[] = [];
-  try {
-    const raw = localStorage.getItem(DEVICE_SESSIONS_KEY);
-    if (raw) sessions = JSON.parse(raw);
-  } catch (e) {
-    console.error('Error parsing device sessions', e);
-  }
+  const sessions = readJson<DeviceSession[]>(DEVICE_SESSIONS_KEY, []);
 
   const existingIndex = sessions.findIndex((s) => s.deviceId === info.deviceId);
   let updatedSession: DeviceSession;
 
   if (existingIndex >= 0) {
-    updatedSession = {
-      ...sessions[existingIndex],
-      ...info,
-      lastActiveAt: nowIso,
-    };
+    updatedSession = { ...sessions[existingIndex], ...info, lastActiveAt: nowIso };
     sessions[existingIndex] = updatedSession;
   } else {
-    updatedSession = {
-      ...info,
-      firstConnectedAt: nowIso,
-      lastActiveAt: nowIso,
-    };
+    updatedSession = { ...info, firstConnectedAt: nowIso, lastActiveAt: nowIso };
     sessions.unshift(updatedSession);
-    
-    // Log initial device connection event
-    addActivityLog({
-      action: 'DEVICE_CONNECTED',
-      actionLabel: 'Nouveau Connexion Appareil',
-      details: `Appareil ${info.deviceType} (${info.platform}) avec la résolution ${info.screenResolution}`,
-    });
   }
 
   localStorage.setItem(DEVICE_SESSIONS_KEY, JSON.stringify(sessions));
@@ -86,48 +80,45 @@ export function registerDeviceConnection(): DeviceSession {
 }
 
 export function getDeviceSessions(): DeviceSession[] {
-  try {
-    const raw = localStorage.getItem(DEVICE_SESSIONS_KEY);
-    return raw ? JSON.parse(raw) : [];
-  } catch (e) {
-    return [];
-  }
+  return readJson<DeviceSession[]>(DEVICE_SESSIONS_KEY, []);
 }
 
-// Activity Logging Functions
-export function getActivityLogs(): ActivityLog[] {
-  try {
-    const raw = localStorage.getItem(ACTIVITY_LOGS_KEY);
-    return raw ? JSON.parse(raw) : [];
-  } catch (e) {
-    return [];
-  }
-}
-
-export function addActivityLog(logData: {
-  action: ActivityLog['action'];
-  actionLabel: string;
-  details: string;
-  targetId?: string;
-}): ActivityLog {
+/**
+ * Writes one entry to the shared, append-only audit trail. Requires a signed-in
+ * actor: firestore.rules rejects a log whose actorUid is not the caller.
+ */
+export async function addActivityLog(
+  logData: {
+    action: ActivityLog['action'];
+    actionLabel: string;
+    details: string;
+    targetId?: string;
+  },
+  actor: AuditActor,
+): Promise<ActivityLog> {
   const info = getDeviceDetails();
-  const newLog: ActivityLog = {
-    id: 'log-' + Date.now() + '-' + Math.random().toString(36).substring(2, 6),
+  const id = 'log-' + Date.now() + '-' + Math.random().toString(36).substring(2, 8);
+
+  const entry: ActivityLog = {
+    id,
     timestamp: new Date().toISOString(),
     action: logData.action,
     actionLabel: logData.actionLabel,
     details: logData.details,
-    targetId: logData.targetId,
+    actorUid: actor.uid,
+    actorName: actor.name,
     deviceId: info.deviceId,
     deviceType: info.deviceType,
+    ...(logData.targetId ? { targetId: logData.targetId } : {}),
   };
 
-  const currentLogs = getActivityLogs();
-  const updated = [newLog, ...currentLogs].slice(0, 500); // keep max 500 logs
-  localStorage.setItem(ACTIVITY_LOGS_KEY, JSON.stringify(updated));
-  return newLog;
+  await setDoc(doc(db, AUDIT_LOGS_COLL, id), entry);
+  return entry;
 }
 
-export function clearAuditLogs(): void {
-  localStorage.removeItem(ACTIVITY_LOGS_KEY);
+export async function fetchActivityLogs(max = 200): Promise<ActivityLog[]> {
+  const snap = await getDocs(
+    query(collection(db, AUDIT_LOGS_COLL), orderBy('timestamp', 'desc'), fsLimit(max)),
+  );
+  return snap.docs.map((d) => d.data() as ActivityLog);
 }

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Calculator, ArrowRight, AlertTriangle, CheckCircle2, Calendar, Clock, Sparkles } from 'lucide-react';
+import { Calculator, ArrowRight, CheckCircle2, Clock, Sparkles } from 'lucide-react';
 import { Employee, LeaveRecord } from '../types';
 import { calculateEmployeeStats } from '../utils/vacationCalc';
 
@@ -32,9 +32,10 @@ export const VacationSimulator: React.FC<VacationSimulatorProps> = ({
   const projectedDebtDays = isProjectedDebt ? Math.abs(projectedBalance) : 0;
 
   // Calcul du temps de résorption du solde négatif projeté (en jours de travail)
-  const projectedDaysToPayback = isProjectedDebt && stats.dailyAccrualRate > 0
-    ? Math.ceil(projectedDebtDays / stats.dailyAccrualRate)
-    : 0;
+  const projectedDaysToPayback =
+    isProjectedDebt && stats.dailyAccrualRate > 0
+      ? Math.ceil(projectedDebtDays / stats.dailyAccrualRate)
+      : 0;
 
   return (
     <div className="bg-white rounded-2xl border border-stone-200/80 shadow-xs p-6 space-y-6">
@@ -48,7 +49,8 @@ export const VacationSimulator: React.FC<VacationSimulatorProps> = ({
               Simulateur & Calculateur de Congés Pris par Avance
             </h3>
             <p className="text-xs text-stone-500">
-              Calculez l'impact d'une demande de congé (ex: 30 jours) sur le solde actuel de l'employé (positif ou déjà négatif).
+              Calculez l'impact d'une demande de congé (ex: 30 jours) sur le solde actuel de
+              l'employé (positif ou déjà négatif).
             </p>
           </div>
         </div>
@@ -73,7 +75,8 @@ export const VacationSimulator: React.FC<VacationSimulatorProps> = ({
             >
               {employees.map((emp) => (
                 <option key={emp.id} value={emp.id}>
-                  [{emp.idNumber || 'SANS-MAT'}] {emp.name} — {emp.position || 'Collaborateur'} ({emp.status === 'EXPAT' ? 'Expatrié' : 'Personnel Local'})
+                  [{emp.idNumber || 'SANS-MAT'}] {emp.name} — {emp.position || 'Collaborateur'} (
+                  {emp.status === 'EXPAT' ? 'Expatrié' : 'Personnel Local'})
                 </option>
               ))}
             </select>
@@ -118,19 +121,27 @@ export const VacationSimulator: React.FC<VacationSimulatorProps> = ({
           <div className="pt-2 border-t border-stone-200/80 text-xs space-y-1.5 text-stone-600">
             <div className="flex justify-between">
               <span>Matricule :</span>
-              <span className="font-mono font-bold text-stone-800">{selectedEmployee.idNumber || 'SANS-MAT'}</span>
+              <span className="font-mono font-bold text-stone-800">
+                {selectedEmployee.idNumber || 'SANS-MAT'}
+              </span>
             </div>
             <div className="flex justify-between">
               <span>Poste & Statut :</span>
-              <span className="font-semibold text-stone-800">{selectedEmployee.position || 'Collaborateur'} ({selectedEmployee.status})</span>
+              <span className="font-semibold text-stone-800">
+                {selectedEmployee.position || 'Collaborateur'} ({selectedEmployee.status})
+              </span>
             </div>
             <div className="flex justify-between">
               <span>Date d'embauche :</span>
-              <span className="font-semibold text-stone-800">{new Date(selectedEmployee.hireDate).toLocaleDateString('fr-FR')}</span>
+              <span className="font-semibold text-stone-800">
+                {new Date(selectedEmployee.hireDate).toLocaleDateString('fr-FR')}
+              </span>
             </div>
             <div className="flex justify-between">
               <span>Acquisition quotidienne :</span>
-              <span className="font-mono text-stone-800">+{stats.dailyAccrualRate.toFixed(4)} j/jour</span>
+              <span className="font-mono text-stone-800">
+                +{stats.dailyAccrualRate.toFixed(4)} j/jour
+              </span>
             </div>
           </div>
         </div>
@@ -150,10 +161,16 @@ export const VacationSimulator: React.FC<VacationSimulatorProps> = ({
             {/* Étape 1 : Solde Précédent */}
             <div className="flex items-center justify-between text-xs">
               <span className="text-stone-300">Solde de congés actuel :</span>
-              <span className={`font-mono font-bold px-2 py-0.5 rounded ${
-                currentBalance >= 0 ? 'bg-emerald-950 text-emerald-300 border border-emerald-800' : 'bg-red-950 text-red-300 border border-red-800'
-              }`}>
-                {currentBalance >= 0 ? `+${currentBalance.toFixed(1)} j` : `${currentBalance.toFixed(1)} j (Solde Négatif)`}
+              <span
+                className={`font-mono font-bold px-2 py-0.5 rounded ${
+                  currentBalance >= 0
+                    ? 'bg-emerald-950 text-emerald-300 border border-emerald-800'
+                    : 'bg-red-950 text-red-300 border border-red-800'
+                }`}
+              >
+                {currentBalance >= 0
+                  ? `+${currentBalance.toFixed(1)} j`
+                  : `${currentBalance.toFixed(1)} j (Solde Négatif)`}
               </span>
             </div>
 
@@ -167,15 +184,24 @@ export const VacationSimulator: React.FC<VacationSimulatorProps> = ({
 
             {/* Étape 3 : Solde Projeté Calculé */}
             <div>
-              <p className="text-2xs text-stone-400 uppercase font-semibold">Solde Projeté Après le Congé :</p>
+              <p className="text-2xs text-stone-400 uppercase font-semibold">
+                Solde Projeté Après le Congé :
+              </p>
               <div className="flex items-baseline gap-2 mt-1">
-                <span className={`text-2xl font-black font-mono ${
-                  projectedBalance >= 0 ? 'text-emerald-400' : 'text-red-400'
-                }`}>
-                  {projectedBalance >= 0 ? `+${projectedBalance.toFixed(1)}` : projectedBalance.toFixed(1)} jours
+                <span
+                  className={`text-2xl font-black font-mono ${
+                    projectedBalance >= 0 ? 'text-emerald-400' : 'text-red-400'
+                  }`}
+                >
+                  {projectedBalance >= 0
+                    ? `+${projectedBalance.toFixed(1)}`
+                    : projectedBalance.toFixed(1)}{' '}
+                  jours
                 </span>
                 <span className="text-xs font-semibold text-stone-300">
-                  {isProjectedDebt ? `(L'employé aura un solde négatif de ${projectedDebtDays.toFixed(1)} j)` : '(Solde positif restant)'}
+                  {isProjectedDebt
+                    ? `(L'employé aura un solde négatif de ${projectedDebtDays.toFixed(1)} j)`
+                    : '(Solde positif restant)'}
                 </span>
               </div>
             </div>
@@ -188,7 +214,9 @@ export const VacationSimulator: React.FC<VacationSimulatorProps> = ({
                   Résorption par le travail : ~{projectedDaysToPayback} jours de travail
                 </p>
                 <p className="text-2xs text-stone-300 leading-relaxed">
-                  L'employé devra effectuer <strong>{projectedDaysToPayback} jours de travail</strong> pour résorber ce solde négatif de {projectedDebtDays.toFixed(1)} jours par son activité quotidienne.
+                  L'employé devra effectuer{' '}
+                  <strong>{projectedDaysToPayback} jours de travail</strong> pour résorber ce solde
+                  négatif de {projectedDebtDays.toFixed(1)} jours par son activité quotidienne.
                 </p>
               </div>
             ) : (
@@ -198,7 +226,8 @@ export const VacationSimulator: React.FC<VacationSimulatorProps> = ({
                   Solde de congés suffisant
                 </p>
                 <p className="text-2xs text-emerald-300 mt-0.5">
-                  L'employé disposera toujours de +{projectedBalance.toFixed(1)} jours de congé disponibles après ces {simulatedDays} jours pris.
+                  L'employé disposera toujours de +{projectedBalance.toFixed(1)} jours de congé
+                  disponibles après ces {simulatedDays} jours pris.
                 </p>
               </div>
             )}

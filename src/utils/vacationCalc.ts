@@ -3,7 +3,7 @@ import { Employee, LeaveRecord, EmployeeStats, LeaveType } from '../types';
 // Taux d'acquisition quotidien de congés en jours
 export class DailyAccrualRates {
   static readonly TYPE_A = 30 / 182.5; // ~0.16438356 j/j (30 jours tous les 6 mois)
-  static readonly TYPE_B = 30 / 365;   // ~0.08219178 j/j (30 jours par an)
+  static readonly TYPE_B = 30 / 365; // ~0.08219178 j/j (30 jours par an)
 }
 
 export const LEAVE_TYPE_LABELS: Record<LeaveType, string> = {
@@ -18,7 +18,11 @@ export const LEAVE_TYPE_LABELS: Record<LeaveType, string> = {
 
 export const LEAVE_TYPE_COLORS: Record<LeaveType, { bg: string; text: string; border: string }> = {
   CONGE_PAYE: { bg: 'bg-amber-50', text: 'text-amber-900', border: 'border-amber-200' },
-  RECUPERATION_JOURS: { bg: 'bg-emerald-50', text: 'text-emerald-950', border: 'border-emerald-300' },
+  RECUPERATION_JOURS: {
+    bg: 'bg-emerald-50',
+    text: 'text-emerald-950',
+    border: 'border-emerald-300',
+  },
   MALADIE_JUSTIFIEE: { bg: 'bg-red-50', text: 'text-red-900', border: 'border-red-200' },
   PATERNITE: { bg: 'bg-blue-50', text: 'text-blue-900', border: 'border-blue-200' },
   MARIAGE: { bg: 'bg-purple-50', text: 'text-purple-900', border: 'border-purple-200' },
@@ -32,19 +36,17 @@ export const LEAVE_TYPE_COLORS: Record<LeaveType, { bg: string; text: string; bo
 export function calculateEmployeeStats(
   employee: Employee,
   leaveRecords: LeaveRecord[],
-  currentDateStr: string = new Date().toISOString().split('T')[0]
+  currentDateStr: string = new Date().toISOString().split('T')[0],
 ): EmployeeStats {
   const hireDate = new Date(employee.hireDate);
   const now = new Date(currentDateStr);
-  
+
   // Calcul du nombre de jours écoulés depuis l'embauche
   const diffTime = Math.max(0, now.getTime() - hireDate.getTime());
   const daysSinceHire = Math.floor(diffTime / (1000 * 60 * 60 * 24));
 
   const dailyAccrualRate =
-    employee.contractType === 'TYPE_A'
-      ? DailyAccrualRates.TYPE_A
-      : DailyAccrualRates.TYPE_B;
+    employee.contractType === 'TYPE_A' ? DailyAccrualRates.TYPE_A : DailyAccrualRates.TYPE_B;
 
   // Total des jours accumulés théoriques par le travail
   const rawAccrued = daysSinceHire * dailyAccrualRate;
@@ -95,7 +97,7 @@ export function calculateEmployeeStats(
   });
 
   // Solde de congés payés = (acquis par activité + jours de récupération) - (congés payés pris)
-  const balanceDays = (totalAccruedDays + recuperationDays) - congePayeDays;
+  const balanceDays = totalAccruedDays + recuperationDays - congePayeDays;
 
   const isDebt = balanceDays < 0;
   const debtDays = isDebt ? Math.abs(balanceDays) : 0;
@@ -135,4 +137,3 @@ export const INITIAL_LEAVE_RECORDS: LeaveRecord[] = [];
 // Sample demo datasets are empty to ensure a clean, brand new database
 export const SAMPLE_DEMO_EMPLOYEES: Employee[] = [];
 export const SAMPLE_DEMO_LEAVE_RECORDS: LeaveRecord[] = [];
-

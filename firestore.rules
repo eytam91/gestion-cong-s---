@@ -1,42 +1,79 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    
-    function isValidId(id) {
-      return id is string && id.size() > 0 && id.size() <= 128;
+
+    // Anything not matched below is denied by default.
+
+    function isSignedIn() {
+      return request.auth != null;
     }
 
-    // Default Deny Catch-All
-    match /{document=**} {
-      allow read, write: if false;
+    function profilePath() {
+      return /databases/$(database)/documents/users/$(request.auth.uid);
     }
-    
-    // Users Collection (Admin / HR accounts)
+
+    // '' when the signed-in account has no profile document yet, so an
+    // authenticated stranger gets no privileges until an admin provisions them.
+    function role() {
+      return isSignedIn() && exists(profilePath())
+        ? get(profilePath()).data.role
+        : '';
+    }
+
+    function isAdmin() {
+      return role() == 'ADMIN';
+    }
+
+    function isStaff() {
+      return role() == 'ADMIN' || role() == 'HR Manager';
+    }
+
+    function isValidRole(r) {
+      return r == 'ADMIN' || r == 'HR Manager' || r == 'PENDING';
+    }
+
+    // User profiles: hold the role claim, so role changes are the sensitive part.
     match /users/{userId} {
-      allow read: if true;
-      allow create, update: if isValidId(userId);
-      allow delete: if true;
+      // A pending account must be able to read its own profile to learn it is pending.
+      allow read: if isStaff() || (isSignedIn() && request.auth.uid == userId);
+
+      // Signing up grants no access: a new account lands as PENDING and an admin
+      // promotes it. Otherwise anyone who can register could read the HR database.
+      allow create: if isAdmin()
+                       ? isValidRole(request.resource.data.role)
+                       : (isSignedIn()
+                          && request.auth.uid == userId
+                          && request.resource.data.uid == userId
+                          && request.resource.data.role == 'PENDING');
+
+      allow update: if isAdmin()
+                       ? isValidRole(request.resource.data.role)
+                       : (isSignedIn()
+                          && request.auth.uid == userId
+                          && request.resource.data.role == resource.data.role
+                          && request.resource.data.uid == resource.data.uid);
+
+      // Admins cannot delete themselves — that could leave the tenant with no admin.
+      allow delete: if isAdmin() && request.auth.uid != userId;
     }
-    
-    // Employees Collection
+
     match /employees/{employeeId} {
-      allow read: if true;
-      allow create, update: if isValidId(employeeId);
-      allow delete: if true;
+      allow read: if isStaff();
+      allow create, update: if isStaff();
+      allow delete: if isAdmin();
     }
-    
-    // Leave Records Collection
+
     match /leave_records/{leaveId} {
-      allow read: if true;
-      allow create, update: if isValidId(leaveId);
-      allow delete: if true;
+      allow read: if isStaff();
+      // Staff correct their own mistakes, so deletion is not admin-only here.
+      allow create, update, delete: if isStaff();
     }
-    
-    // Audit Logs Collection
+
+    // Append-only: an audit trail that its own subjects can edit is not an audit trail.
     match /audit_logs/{logId} {
-      allow read: if true;
-      allow create, update: if isValidId(logId);
-      allow delete: if true;
+      allow read: if isStaff();
+      allow create: if isStaff() && request.resource.data.actorUid == request.auth.uid;
+      allow update, delete: if false;
     }
   }
 }

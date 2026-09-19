@@ -1,20 +1,18 @@
-import React, { useState } from 'react';
-import { 
-  UserPlus, 
-  Users, 
-  Search, 
-  Trash2, 
-  Edit3, 
-  Calendar, 
-  Check, 
-  X, 
-  Briefcase, 
-  BadgeCheck, 
-  Clock, 
-  Plus, 
+import React, { useEffect, useState } from 'react';
+import {
+  UserPlus,
+  Users,
+  Search,
+  Trash2,
+  Edit3,
+  Calendar,
+  Check,
+  X,
+  Briefcase,
+  BadgeCheck,
+  Plus,
   AlertTriangle,
   FileText,
-  Banknote,
   History,
   Globe,
   Building2,
@@ -22,9 +20,8 @@ import {
   Download,
   Filter,
   Hash,
-  Sparkles,
   CheckCircle2,
-  AlertCircle
+  AlertCircle,
 } from 'lucide-react';
 import { Employee, ContractType, EmployeeStatus, LeaveRecord } from '../types';
 import { calculateEmployeeStats, LEAVE_TYPE_LABELS } from '../utils/vacationCalc';
@@ -40,7 +37,11 @@ interface EmployeeManagerProps {
   onDeleteEmployee: (id: string) => void;
   onBatchImportEmployees: (employees: Employee[]) => Promise<void>;
   onOpenLeaveModal: (employeeId: string) => void;
+  /** Deleting an employee cascades to their leave history, so it is admin-only. */
+  canDelete?: boolean;
 }
+
+const PAGE_SIZE = 25;
 
 export const EmployeeManager: React.FC<EmployeeManagerProps> = ({
   employees,
@@ -50,6 +51,7 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({
   onDeleteEmployee,
   onBatchImportEmployees,
   onOpenLeaveModal,
+  canDelete = true,
 }) => {
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
@@ -58,6 +60,7 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({
   const [statusFilter, setStatusFilter] = useState<'ALL' | EmployeeStatus>('ALL');
   const [contractFilter, setContractFilter] = useState<'ALL' | ContractType>('ALL');
   const [selectedEmployeeDetailId, setSelectedEmployeeDetailId] = useState<string | null>(null);
+  const [page, setPage] = useState(1);
 
   // Form Fields
   const [idNumber, setIdNumber] = useState('');
@@ -90,7 +93,9 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({
         contractType !== editingEmployee.contractType
       );
     }
-    return Boolean(name.trim() || position.trim() || idNumber.trim() || matriculeGL.trim() || nationality.trim());
+    return Boolean(
+      name.trim() || position.trim() || idNumber.trim() || matriculeGL.trim() || nationality.trim(),
+    );
   };
 
   const handleOpenAddForm = () => {
@@ -139,7 +144,7 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({
     // 1. Nom & Prénom
     const trimmedName = name.trim();
     if (!trimmedName) {
-      errs.name = 'Le nom et prénom de l\'employé sont obligatoires.';
+      errs.name = "Le nom et prénom de l'employé sont obligatoires.";
     } else if (trimmedName.length < 2) {
       errs.name = 'Le nom doit comporter au moins 2 caractères.';
     }
@@ -153,10 +158,10 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({
     } else {
       // Check for uniqueness
       const isDuplicate = employees.some(
-        (emp) => 
-          emp.idNumber && 
+        (emp) =>
+          emp.idNumber &&
           emp.idNumber.toLowerCase() === trimmedIdNumber.toLowerCase() &&
-          (!editingEmployee || emp.id !== editingEmployee.id)
+          (!editingEmployee || emp.id !== editingEmployee.id),
       );
       if (isDuplicate) {
         errs.idNumber = `Le matricule "${trimmedIdNumber}" est déjà attribué à un autre employé.`;
@@ -166,18 +171,18 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({
     // 3. Poste / Fonction
     const trimmedPos = position.trim();
     if (!trimmedPos) {
-      errs.position = 'L\'intitulé du poste / fonction est obligatoire.';
+      errs.position = "L'intitulé du poste / fonction est obligatoire.";
     } else if (trimmedPos.length < 2) {
-      errs.position = 'L\'intitulé du poste doit comporter au moins 2 caractères.';
+      errs.position = "L'intitulé du poste doit comporter au moins 2 caractères.";
     }
 
     // 4. Date d'embauche
     if (!hireDate) {
-      errs.hireDate = 'La date d\'embauche est obligatoire.';
+      errs.hireDate = "La date d'embauche est obligatoire.";
     } else {
       const parsedDate = new Date(hireDate);
       if (isNaN(parsedDate.getTime())) {
-        errs.hireDate = 'Date d\'embauche invalide (format AAAA-MM-JJ requis).';
+        errs.hireDate = "Date d'embauche invalide (format AAAA-MM-JJ requis).";
       } else {
         const year = parsedDate.getFullYear();
         if (year < 1970 || year > 2099) {
@@ -243,34 +248,37 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({
 
   const handleExportEmployeesExcel = () => {
     if (employees.length === 0) {
-      alert("Aucun employé à exporter.");
+      alert('Aucun employé à exporter.');
       return;
     }
     try {
       exportEmployeesToExcel(employees, leaveRecords);
-    } catch (err: any) {
-      alert("Erreur lors de l'export Excel : " + (err.message || 'Erreur inconnue'));
+    } catch (err) {
+      alert(
+        "Erreur lors de l'export Excel : " +
+          (err instanceof Error ? err.message : 'Erreur inconnue'),
+      );
     }
   };
 
   const handleExportEmployeesCsv = () => {
     if (employees.length === 0) {
-      alert("Aucun employé à exporter.");
+      alert('Aucun employé à exporter.');
       return;
     }
 
     const headers = [
-      "N° Matricule",
-      "Nom & Prénom",
-      "Poste / Fonction",
-      "Statut Contractuel",
-      "Type de Contrat",
+      'N° Matricule',
+      'Nom & Prénom',
+      'Poste / Fonction',
+      'Statut Contractuel',
+      'Type de Contrat',
       "Date d'Embauche",
-      "Jours Acquis (Travail)",
-      "Congés Payés Consommés (j)",
-      "Solde Actuel (j)",
-      "Solde Négatif (j)",
-      "Jours Régularisation Estimés"
+      'Jours Acquis (Travail)',
+      'Congés Payés Consommés (j)',
+      'Solde Actuel (j)',
+      'Solde Négatif (j)',
+      'Jours Régularisation Estimés',
     ];
 
     const rows = employees.map((emp) => {
@@ -286,8 +294,10 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({
         stats.totalLeaveTakenDays.toFixed(1),
         stats.balanceDays.toFixed(2),
         stats.isDebt ? stats.debtDays.toFixed(2) : '0',
-        stats.isDebt ? stats.daysToPayback : '0'
-      ].map(val => `"${String(val).replace(/"/g, '""')}"`).join(';');
+        stats.isDebt ? stats.daysToPayback : '0',
+      ]
+        .map((val) => `"${String(val).replace(/"/g, '""')}"`)
+        .join(';');
     });
 
     const csvContent = '\uFEFF' + [headers.join(';'), ...rows].join('\n');
@@ -295,7 +305,10 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.setAttribute('href', url);
-    link.setAttribute('download', `liste_employes_rh_${new Date().toISOString().split('T')[0]}.csv`);
+    link.setAttribute(
+      'download',
+      `liste_employes_rh_${new Date().toISOString().split('T')[0]}.csv`,
+    );
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -304,7 +317,7 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({
 
   const filteredEmployees = employees.filter((emp) => {
     const term = searchTerm.toLowerCase();
-    const matchesSearch = 
+    const matchesSearch =
       emp.name.toLowerCase().includes(term) ||
       (emp.idNumber && emp.idNumber.toLowerCase().includes(term)) ||
       (emp.matriculeGL && emp.matriculeGL.toLowerCase().includes(term)) ||
@@ -316,21 +329,41 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({
     return matchesSearch && matchesStatus && matchesContract;
   });
 
-  const countLocal = employees.filter(e => e.status === 'LOCAL').length;
-  const countExpat = employees.filter(e => e.status === 'EXPAT').length;
-  const countTypeA = employees.filter(e => e.contractType === 'TYPE_A').length;
-  const countTypeB = employees.filter(e => e.contractType === 'TYPE_B').length;
+  const pageCount = Math.max(1, Math.ceil(filteredEmployees.length / PAGE_SIZE));
+  // Narrowing the filters can strand the view on a page that no longer exists.
+  const currentPage = Math.min(page, pageCount);
+  const visibleEmployees = filteredEmployees.slice(
+    (currentPage - 1) * PAGE_SIZE,
+    currentPage * PAGE_SIZE,
+  );
+
+  useEffect(() => {
+    setPage(1);
+  }, [searchTerm, statusFilter, contractFilter]);
+
+  const countLocal = employees.filter((e) => e.status === 'LOCAL').length;
+  const countExpat = employees.filter((e) => e.status === 'EXPAT').length;
+  const countTypeA = employees.filter((e) => e.contractType === 'TYPE_A').length;
+  const countTypeB = employees.filter((e) => e.contractType === 'TYPE_B').length;
 
   const selectedEmployee = employees.find((e) => e.id === selectedEmployeeDetailId);
-  const selectedEmpStats = selectedEmployee ? calculateEmployeeStats(selectedEmployee, leaveRecords) : null;
-  const selectedEmpRecords = selectedEmployee ? leaveRecords.filter((r) => r.employeeId === selectedEmployee.id) : [];
+  const selectedEmpStats = selectedEmployee
+    ? calculateEmployeeStats(selectedEmployee, leaveRecords)
+    : null;
+  const selectedEmpRecords = selectedEmployee
+    ? leaveRecords.filter((r) => r.employeeId === selectedEmployee.id)
+    : [];
 
   // Check if form is currently valid in real-time
   const isNameValid = name.trim().length >= 2;
   const isIdValid = idNumber.trim().length >= 2;
   const isPositionValid = position.trim().length >= 2;
   const isHireDateValid = Boolean(hireDate && !isNaN(new Date(hireDate).getTime()));
-  const validFieldsCount = (isNameValid ? 1 : 0) + (isIdValid ? 1 : 0) + (isPositionValid ? 1 : 0) + (isHireDateValid ? 1 : 0);
+  const validFieldsCount =
+    (isNameValid ? 1 : 0) +
+    (isIdValid ? 1 : 0) +
+    (isPositionValid ? 1 : 0) +
+    (isHireDateValid ? 1 : 0);
   const isFormFullyValid = validFieldsCount === 4;
 
   return (
@@ -345,7 +378,8 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({
             </span>
           </h2>
           <p className="text-xs text-stone-500 mt-0.5">
-            Renseignez N° Matricule, Fonction, Statut (Personnel Local vs Expatrié) et Cycle de Congés avec validation stricte.
+            Renseignez N° Matricule, Fonction, Statut (Personnel Local vs Expatrié) et Cycle de
+            Congés avec validation stricte.
           </p>
         </div>
 
@@ -397,13 +431,21 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({
             <div className="flex items-center justify-between border-b border-stone-100 pb-3">
               <div className="flex items-center gap-2.5">
                 <div className="w-10 h-10 rounded-2xl bg-stone-900 text-white flex items-center justify-center shadow-xs">
-                  {editingEmployee ? <Edit3 className="w-5 h-5 text-amber-400" /> : <UserPlus className="w-5 h-5 text-amber-400" />}
+                  {editingEmployee ? (
+                    <Edit3 className="w-5 h-5 text-amber-400" />
+                  ) : (
+                    <UserPlus className="w-5 h-5 text-amber-400" />
+                  )}
                 </div>
                 <div>
                   <h3 className="text-lg font-bold text-stone-900">
-                    {editingEmployee ? `Modifier l'employé : ${editingEmployee.name}` : 'Nouvel Employé'}
+                    {editingEmployee
+                      ? `Modifier l'employé : ${editingEmployee.name}`
+                      : 'Nouvel Employé'}
                   </h3>
-                  <p className="text-2xs text-stone-500">Tous les champs marqués d'une étoile (*) sont strictement requis</p>
+                  <p className="text-2xs text-stone-500">
+                    Tous les champs marqués d'une étoile (*) sont strictement requis
+                  </p>
                 </div>
               </div>
               <button
@@ -449,19 +491,30 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({
                     onChange={(e) => {
                       setIdNumber(e.target.value);
                       if (errors.idNumber) {
-                        setErrors(prev => { const n = { ...prev }; delete n.idNumber; return n; });
+                        setErrors((prev) => {
+                          const n = { ...prev };
+                          delete n.idNumber;
+                          return n;
+                        });
                       }
                     }}
                     className={`w-full px-3 py-2 rounded-xl border bg-stone-50 font-mono font-bold text-stone-900 text-xs sm:text-sm focus:bg-white focus:outline-none focus:ring-2 focus:ring-stone-900/10 transition-all ${
-                      errors.idNumber ? 'border-red-500 ring-2 ring-red-200 bg-red-50/30' : 'border-stone-200'
+                      errors.idNumber
+                        ? 'border-red-500 ring-2 ring-red-200 bg-red-50/30'
+                        : 'border-stone-200'
                     }`}
                   />
-                  {errors.idNumber && <p className="text-2xs text-red-600 font-medium mt-1">{errors.idNumber}</p>}
+                  {errors.idNumber && (
+                    <p className="text-2xs text-red-600 font-medium mt-1">{errors.idNumber}</p>
+                  )}
                 </div>
-                
+
                 <div className="sm:col-span-1">
                   <div className="flex items-center justify-between mb-1">
-                    <label className="text-2xs font-bold text-stone-700 uppercase tracking-wider flex items-center gap-1" title="ID Société / ID Entreprise">
+                    <label
+                      className="text-2xs font-bold text-stone-700 uppercase tracking-wider flex items-center gap-1"
+                      title="ID Société / ID Entreprise"
+                    >
                       <Hash className="w-3 h-3 text-stone-500" />
                       Matricule GL
                     </label>
@@ -490,14 +543,22 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({
                     onChange={(e) => {
                       setName(e.target.value);
                       if (errors.name) {
-                        setErrors(prev => { const n = { ...prev }; delete n.name; return n; });
+                        setErrors((prev) => {
+                          const n = { ...prev };
+                          delete n.name;
+                          return n;
+                        });
                       }
                     }}
                     className={`w-full px-3 py-2 rounded-xl border bg-stone-50 text-stone-900 text-xs sm:text-sm focus:bg-white focus:outline-none focus:ring-2 focus:ring-stone-900/10 transition-all ${
-                      errors.name ? 'border-red-500 ring-2 ring-red-200 bg-red-50/30' : 'border-stone-200'
+                      errors.name
+                        ? 'border-red-500 ring-2 ring-red-200 bg-red-50/30'
+                        : 'border-stone-200'
                     }`}
                   />
-                  {errors.name && <p className="text-2xs text-red-600 font-medium mt-1">{errors.name}</p>}
+                  {errors.name && (
+                    <p className="text-2xs text-red-600 font-medium mt-1">{errors.name}</p>
+                  )}
                 </div>
               </div>
 
@@ -519,14 +580,22 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({
                     onChange={(e) => {
                       setPosition(e.target.value);
                       if (errors.position) {
-                        setErrors(prev => { const n = { ...prev }; delete n.position; return n; });
+                        setErrors((prev) => {
+                          const n = { ...prev };
+                          delete n.position;
+                          return n;
+                        });
                       }
                     }}
                     className={`w-full px-3 py-2 rounded-xl border bg-stone-50 text-stone-900 text-xs sm:text-sm focus:bg-white focus:outline-none focus:ring-2 focus:ring-stone-900/10 transition-all ${
-                      errors.position ? 'border-red-500 ring-2 ring-red-200 bg-red-50/30' : 'border-stone-200'
+                      errors.position
+                        ? 'border-red-500 ring-2 ring-red-200 bg-red-50/30'
+                        : 'border-stone-200'
                     }`}
                   />
-                  {errors.position && <p className="text-2xs text-red-600 font-medium mt-1">{errors.position}</p>}
+                  {errors.position && (
+                    <p className="text-2xs text-red-600 font-medium mt-1">{errors.position}</p>
+                  )}
                 </div>
 
                 {/* Nationalité */}
@@ -562,12 +631,16 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({
                         : 'bg-stone-50 border-stone-200 text-stone-600 hover:bg-stone-100'
                     }`}
                   >
-                    <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${status === 'LOCAL' ? 'bg-teal-600 text-white' : 'bg-stone-200 text-stone-600'}`}>
+                    <div
+                      className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${status === 'LOCAL' ? 'bg-teal-600 text-white' : 'bg-stone-200 text-stone-600'}`}
+                    >
                       <Building2 className="w-4 h-4" />
                     </div>
                     <div>
                       <div className="text-xs font-bold">Personnel Local</div>
-                      <div className="text-[10px] text-stone-500 font-normal">Contrat Local / National</div>
+                      <div className="text-[10px] text-stone-500 font-normal">
+                        Contrat Local / National
+                      </div>
                     </div>
                   </button>
 
@@ -580,12 +653,16 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({
                         : 'bg-stone-50 border-stone-200 text-stone-600 hover:bg-stone-100'
                     }`}
                   >
-                    <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${status === 'EXPAT' ? 'bg-purple-600 text-white' : 'bg-stone-200 text-stone-600'}`}>
+                    <div
+                      className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${status === 'EXPAT' ? 'bg-purple-600 text-white' : 'bg-stone-200 text-stone-600'}`}
+                    >
                       <Globe className="w-4 h-4" />
                     </div>
                     <div>
                       <div className="text-xs font-bold">Expatrié (EXPAT)</div>
-                      <div className="text-[10px] text-stone-500 font-normal">Personnel Détaché / Étranger</div>
+                      <div className="text-[10px] text-stone-500 font-normal">
+                        Personnel Détaché / Étranger
+                      </div>
                     </div>
                   </button>
                 </div>
@@ -607,14 +684,22 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({
                   onChange={(e) => {
                     setHireDate(e.target.value);
                     if (errors.hireDate) {
-                      setErrors(prev => { const n = { ...prev }; delete n.hireDate; return n; });
+                      setErrors((prev) => {
+                        const n = { ...prev };
+                        delete n.hireDate;
+                        return n;
+                      });
                     }
                   }}
                   className={`w-full px-3 py-2 rounded-xl border bg-stone-50 text-stone-900 text-xs sm:text-sm focus:bg-white focus:outline-none focus:ring-2 focus:ring-stone-900/10 transition-all ${
-                    errors.hireDate ? 'border-red-500 ring-2 ring-red-200 bg-red-50/30' : 'border-stone-200'
+                    errors.hireDate
+                      ? 'border-red-500 ring-2 ring-red-200 bg-red-50/30'
+                      : 'border-stone-200'
                   }`}
                 />
-                {errors.hireDate && <p className="text-2xs text-red-600 font-medium mt-1">{errors.hireDate}</p>}
+                {errors.hireDate && (
+                  <p className="text-2xs text-red-600 font-medium mt-1">{errors.hireDate}</p>
+                )}
               </div>
 
               {/* Type de Contrat & Cycle de Congés */}
@@ -643,9 +728,10 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({
                       TYPE_A (6 mois)
                     </div>
                     <span className="text-[10px] font-normal text-stone-500 leading-relaxed">
-                      • 30 jours / 6 mois<br />
-                      • ~0.1644 j/jour<br />
-                      • Cycle semestriel
+                      • 30 jours / 6 mois
+                      <br />
+                      • ~0.1644 j/jour
+                      <br />• Cycle semestriel
                     </span>
                   </label>
 
@@ -669,9 +755,10 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({
                       TYPE_B (12 mois)
                     </div>
                     <span className="text-[10px] font-normal text-stone-500 leading-relaxed">
-                      • 30 jours / an<br />
-                      • ~0.0822 j/jour<br />
-                      • Cycle annuel
+                      • 30 jours / an
+                      <br />
+                      • ~0.0822 j/jour
+                      <br />• Cycle annuel
                     </span>
                   </label>
                 </div>
@@ -680,7 +767,9 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({
               {/* Status Validation Progress */}
               <div className="p-3 bg-stone-50 rounded-2xl border border-stone-200/80 flex items-center justify-between text-2xs">
                 <span className="text-stone-500 font-medium">Validation des champs :</span>
-                <span className={`font-bold flex items-center gap-1 ${isFormFullyValid ? 'text-emerald-700' : 'text-amber-700'}`}>
+                <span
+                  className={`font-bold flex items-center gap-1 ${isFormFullyValid ? 'text-emerald-700' : 'text-amber-700'}`}
+                >
                   {isFormFullyValid ? (
                     <>
                       <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
@@ -709,7 +798,9 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({
                   className="bg-stone-900 hover:bg-stone-800 text-white text-xs font-bold px-5 py-2.5 rounded-xl shadow-xs transition-all cursor-pointer active:scale-98 flex items-center gap-2"
                 >
                   <Check className="w-4 h-4 text-amber-400" />
-                  <span>{editingEmployee ? 'Enregistrer les modifications' : 'Créer l\'employé'}</span>
+                  <span>
+                    {editingEmployee ? 'Enregistrer les modifications' : "Créer l'employé"}
+                  </span>
                 </button>
               </div>
             </form>
@@ -720,22 +811,53 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({
       {/* Save / Edit Confirmation Modal */}
       <ConfirmModal
         isOpen={showSaveConfirmModal}
-        title={editingEmployee ? "Enregistrer les modifications de l'employé ?" : "Confirmer la création de l'employé ?"}
+        title={
+          editingEmployee
+            ? "Enregistrer les modifications de l'employé ?"
+            : "Confirmer la création de l'employé ?"
+        }
         subtitle={
           editingEmployee
-            ? "Voulez-vous enregistrer les modifications apportées à la fiche de cet employé dans Cloud Firestore ?"
+            ? 'Voulez-vous enregistrer les modifications apportées à la fiche de cet employé dans Cloud Firestore ?'
             : "Veuillez vérifier les informations ci-dessous avant d'enregistrer le nouvel employé dans la base de données."
         }
         type="save"
-        confirmLabel={editingEmployee ? "Confirmer la mise à jour" : "Confirmer la création"}
+        confirmLabel={editingEmployee ? 'Confirmer la mise à jour' : 'Confirmer la création'}
         cancelLabel="Continuer la modification"
         summaryItems={[
-          { label: "N° Matricule", value: idNumber, icon: <Hash className="w-3.5 h-3.5 text-stone-400" /> },
-          { label: "Nom & Prénom", value: name, icon: <Users className="w-3.5 h-3.5 text-stone-400" /> },
-          { label: "Poste / Fonction", value: position, icon: <Briefcase className="w-3.5 h-3.5 text-stone-400" /> },
-          { label: "Statut Contractuel", value: status === 'EXPAT' ? 'Expatrié (EXPAT)' : 'Personnel Local (LOCAL)', icon: <Building2 className="w-3.5 h-3.5 text-stone-400" /> },
-          { label: "Date d'Embauche", value: new Date(hireDate).toLocaleDateString('fr-FR'), icon: <Calendar className="w-3.5 h-3.5 text-stone-400" /> },
-          { label: "Cycle de Congés", value: contractType === 'TYPE_A' ? 'Type A (30 jours / 6 mois)' : 'Type B (30 jours / 12 mois)', icon: <BadgeCheck className="w-3.5 h-3.5 text-stone-400" /> }
+          {
+            label: 'N° Matricule',
+            value: idNumber,
+            icon: <Hash className="w-3.5 h-3.5 text-stone-400" />,
+          },
+          {
+            label: 'Nom & Prénom',
+            value: name,
+            icon: <Users className="w-3.5 h-3.5 text-stone-400" />,
+          },
+          {
+            label: 'Poste / Fonction',
+            value: position,
+            icon: <Briefcase className="w-3.5 h-3.5 text-stone-400" />,
+          },
+          {
+            label: 'Statut Contractuel',
+            value: status === 'EXPAT' ? 'Expatrié (EXPAT)' : 'Personnel Local (LOCAL)',
+            icon: <Building2 className="w-3.5 h-3.5 text-stone-400" />,
+          },
+          {
+            label: "Date d'Embauche",
+            value: new Date(hireDate).toLocaleDateString('fr-FR'),
+            icon: <Calendar className="w-3.5 h-3.5 text-stone-400" />,
+          },
+          {
+            label: 'Cycle de Congés',
+            value:
+              contractType === 'TYPE_A'
+                ? 'Type A (30 jours / 6 mois)'
+                : 'Type B (30 jours / 12 mois)',
+            icon: <BadgeCheck className="w-3.5 h-3.5 text-stone-400" />,
+          },
         ]}
         onConfirm={handleExecuteSave}
         onCancel={() => setShowSaveConfirmModal(false)}
@@ -770,10 +892,10 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({
           cancelLabel="Annuler"
           warningMessage="Attention : Cette suppression sera répercutée immédiatement dans Cloud Firestore et tous les appareils connectés."
           summaryItems={[
-            { label: "N° Matricule", value: employeeToDelete.idNumber || 'SANS-MAT' },
-            { label: "Nom & Prénom", value: employeeToDelete.name },
-            { label: "Poste", value: employeeToDelete.position || 'Collaborateur' },
-            { label: "Statut", value: employeeToDelete.status }
+            { label: 'N° Matricule', value: employeeToDelete.idNumber || 'SANS-MAT' },
+            { label: 'Nom & Prénom', value: employeeToDelete.name },
+            { label: 'Poste', value: employeeToDelete.position || 'Collaborateur' },
+            { label: 'Statut', value: employeeToDelete.status },
           ]}
           onConfirm={() => {
             const id = employeeToDelete.id;
@@ -787,7 +909,6 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({
       {/* Filter and Search Bar */}
       <div className="bg-white p-4 rounded-2xl border border-stone-200/80 shadow-xs space-y-3">
         <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3">
-          
           {/* Search Box */}
           <div className="relative flex-1">
             <Search className="w-4 h-4 text-stone-400 absolute left-3.5 top-3 pointer-events-none" />
@@ -875,7 +996,6 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({
               Type B ({countTypeB})
             </button>
           </div>
-
         </div>
       </div>
 
@@ -887,12 +1007,14 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({
           </div>
           <div>
             <h3 className="text-base font-bold text-stone-900">
-              {employees.length === 0 ? "Aucun employé enregistré pour le moment" : "Aucun employé ne correspond aux filtres"}
+              {employees.length === 0
+                ? 'Aucun employé enregistré pour le moment'
+                : 'Aucun employé ne correspond aux filtres'}
             </h3>
             <p className="text-xs text-stone-500 mt-1 max-w-md mx-auto">
-              {employees.length === 0 
-                ? "Commencez par ajouter votre premier collaborateur ou importez directement une liste complète depuis un fichier Excel / CSV." 
-                : "Essayez de modifier votre recherche ou vos filtres de statut."}
+              {employees.length === 0
+                ? 'Commencez par ajouter votre premier collaborateur ou importez directement une liste complète depuis un fichier Excel / CSV.'
+                : 'Essayez de modifier votre recherche ou vos filtres de statut.'}
             </p>
           </div>
 
@@ -917,7 +1039,7 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-          {filteredEmployees.map((emp) => {
+          {visibleEmployees.map((emp) => {
             const stats = calculateEmployeeStats(emp, leaveRecords);
 
             return (
@@ -930,20 +1052,27 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({
                   <div className="flex items-start justify-between gap-2">
                     <div className="flex items-center gap-3">
                       <div className="relative">
-                        <div className={`w-11 h-11 rounded-xl flex items-center justify-center font-bold text-sm text-white shadow-2xs ${
-                          emp.status === 'EXPAT' ? 'bg-purple-900' : 'bg-stone-900'
-                        }`}>
+                        <div
+                          className={`w-11 h-11 rounded-xl flex items-center justify-center font-bold text-sm text-white shadow-2xs ${
+                            emp.status === 'EXPAT' ? 'bg-purple-900' : 'bg-stone-900'
+                          }`}
+                        >
                           {emp.name.charAt(0)}
                         </div>
                         {stats.isDebt && (
-                          <span className="absolute -top-1 -right-1 w-3.5 h-3.5 rounded-full bg-red-600 border-2 border-white ring-2 ring-red-400/50" title="Solde négatif à régulariser" />
+                          <span
+                            className="absolute -top-1 -right-1 w-3.5 h-3.5 rounded-full bg-red-600 border-2 border-white ring-2 ring-red-400/50"
+                            title="Solde négatif à régulariser"
+                          />
                         )}
                       </div>
                       <div>
                         <div className="flex items-center gap-1.5 flex-wrap">
                           <h3 className="font-bold text-stone-900 text-base">{emp.name}</h3>
                         </div>
-                        <p className="text-xs font-medium text-stone-600">{emp.position || 'Collaborateur'}</p>
+                        <p className="text-xs font-medium text-stone-600">
+                          {emp.position || 'Collaborateur'}
+                        </p>
                         <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
                           <span className="font-mono text-2xs font-bold px-1.5 py-0.2 rounded bg-stone-100 text-stone-700 border border-stone-200">
                             {emp.idNumber || 'SANS-MAT'}
@@ -959,7 +1088,9 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({
                               {emp.nationality}
                             </span>
                           )}
-                          <span className="text-[11px] text-stone-400 whitespace-nowrap">• Embauché le {new Date(emp.hireDate).toLocaleDateString('fr-FR')}</span>
+                          <span className="text-[11px] text-stone-400 whitespace-nowrap">
+                            • Embauché le {new Date(emp.hireDate).toLocaleDateString('fr-FR')}
+                          </span>
                         </div>
                       </div>
                     </div>
@@ -997,8 +1128,8 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({
                       <span className="text-stone-500 font-medium">Solde de Congés:</span>
                       {stats.isDebt ? (
                         <span className="font-extrabold text-red-700 bg-red-100 px-2 py-0.5 rounded-md border border-red-300 flex items-center gap-1 font-mono">
-                          <span className="w-1.5 h-1.5 rounded-full bg-red-600 animate-pulse" />
-                          -{stats.debtDays.toFixed(1)} j (Négatif)
+                          <span className="w-1.5 h-1.5 rounded-full bg-red-600 animate-pulse" />-
+                          {stats.debtDays.toFixed(1)} j (Négatif)
                         </span>
                       ) : (
                         <span className="font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200 font-mono">
@@ -1011,7 +1142,9 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({
                       <div className="p-2.5 rounded-xl bg-red-50 border border-red-200 text-2xs space-y-1">
                         <p className="font-extrabold text-red-700 flex items-center gap-1.5">
                           <AlertTriangle className="w-3.5 h-3.5 text-red-600 shrink-0" />
-                          <span>Doit régulariser <strong>{stats.debtDays.toFixed(1)} jour(s)</strong></span>
+                          <span>
+                            Doit régulariser <strong>{stats.debtDays.toFixed(1)} jour(s)</strong>
+                          </span>
                         </p>
                         <p className="text-stone-600 pl-5">
                           Délai estimé: ~{stats.daysToPayback} jours de travail
@@ -1052,13 +1185,16 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({
                     >
                       <Edit3 className="w-4 h-4" />
                     </button>
-                    <button
-                      onClick={() => setEmployeeToDelete(emp)}
-                      className="p-1.5 text-stone-400 hover:text-red-600 hover:bg-red-50 rounded-lg cursor-pointer transition-colors"
-                      title="Supprimer cet employé"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
+                    {canDelete && (
+                      <button
+                        onClick={() => setEmployeeToDelete(emp)}
+                        className="p-1.5 text-stone-400 hover:text-red-600 hover:bg-red-50 rounded-lg cursor-pointer transition-colors"
+                        title="Supprimer cet employé"
+                        aria-label={`Supprimer ${emp.name}`}
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    )}
                   </div>
                 </div>
               </div>
@@ -1067,28 +1203,65 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({
         </div>
       )}
 
+      {pageCount > 1 && (
+        <nav
+          aria-label="Pagination des employés"
+          className="flex items-center justify-between gap-3 bg-white rounded-2xl border border-stone-200 px-4 py-3 shadow-xs"
+        >
+          <span className="text-xs text-stone-500 font-mono">
+            {(currentPage - 1) * PAGE_SIZE + 1}–
+            {Math.min(currentPage * PAGE_SIZE, filteredEmployees.length)} sur{' '}
+            {filteredEmployees.length}
+          </span>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setPage(currentPage - 1)}
+              disabled={currentPage <= 1}
+              className="px-3 py-1.5 text-xs font-bold text-stone-600 bg-stone-50 border border-stone-200 rounded-lg hover:bg-stone-100 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer transition-colors"
+            >
+              Précédent
+            </button>
+            <span className="text-xs font-bold text-stone-700 font-mono">
+              {currentPage} / {pageCount}
+            </span>
+            <button
+              onClick={() => setPage(currentPage + 1)}
+              disabled={currentPage >= pageCount}
+              className="px-3 py-1.5 text-xs font-bold text-stone-600 bg-stone-50 border border-stone-200 rounded-lg hover:bg-stone-100 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer transition-colors"
+            >
+              Suivant
+            </button>
+          </div>
+        </nav>
+      )}
+
       {/* Employee Detail Modal */}
       {selectedEmployee && selectedEmpStats && (
         <div className="fixed inset-0 bg-stone-900/50 backdrop-blur-xs flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-3xl border border-stone-200 shadow-2xl max-w-2xl w-full p-6 space-y-6 max-h-[90vh] overflow-y-auto animate-in fade-in zoom-in-95 duration-150">
             <div className="flex items-center justify-between border-b border-stone-100 pb-4">
               <div className="flex items-center gap-3">
-                <div className={`w-12 h-12 rounded-2xl text-white font-bold text-base flex items-center justify-center ${
-                  selectedEmployee.status === 'EXPAT' ? 'bg-purple-900' : 'bg-stone-900'
-                }`}>
+                <div
+                  className={`w-12 h-12 rounded-2xl text-white font-bold text-base flex items-center justify-center ${
+                    selectedEmployee.status === 'EXPAT' ? 'bg-purple-900' : 'bg-stone-900'
+                  }`}
+                >
                   {selectedEmployee.name.charAt(0)}
                 </div>
                 <div>
                   <div className="flex items-center gap-2">
-                    <h3 className="text-xl font-bold text-stone-900">
-                      {selectedEmployee.name}
-                    </h3>
+                    <h3 className="text-xl font-bold text-stone-900">{selectedEmployee.name}</h3>
                     <span className="font-mono text-xs font-bold px-2 py-0.5 rounded bg-stone-100 text-stone-800 border border-stone-200">
                       {selectedEmployee.idNumber || 'SANS-MAT'}
                     </span>
                   </div>
                   <p className="text-xs text-stone-500 mt-0.5">
-                    {selectedEmployee.position} • {selectedEmployee.status === 'EXPAT' ? 'Expatrié (EXPAT)' : 'Personnel Local (LOCAL)'} • Contrat {selectedEmployee.contractType} (Embauché le {new Date(selectedEmployee.hireDate).toLocaleDateString('fr-FR')})
+                    {selectedEmployee.position} •{' '}
+                    {selectedEmployee.status === 'EXPAT'
+                      ? 'Expatrié (EXPAT)'
+                      : 'Personnel Local (LOCAL)'}{' '}
+                    • Contrat {selectedEmployee.contractType} (Embauché le{' '}
+                    {new Date(selectedEmployee.hireDate).toLocaleDateString('fr-FR')})
                   </p>
                 </div>
               </div>
@@ -1104,18 +1277,28 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
               <div className="bg-stone-50 p-3.5 rounded-2xl border border-stone-200">
                 <p className="text-2xs font-bold text-stone-400 uppercase">Jours Acquis Total</p>
-                <p className="text-lg font-bold text-emerald-700 mt-1 font-mono">+{selectedEmpStats.totalAccruedDays.toFixed(1)} j</p>
+                <p className="text-lg font-bold text-emerald-700 mt-1 font-mono">
+                  +{selectedEmpStats.totalAccruedDays.toFixed(1)} j
+                </p>
               </div>
 
               <div className="bg-stone-50 p-3.5 rounded-2xl border border-stone-200">
                 <p className="text-2xs font-bold text-stone-400 uppercase">Congés Payés Pris</p>
-                <p className="text-lg font-bold text-stone-900 mt-1 font-mono">{selectedEmpStats.totalLeaveTakenDays} j</p>
+                <p className="text-lg font-bold text-stone-900 mt-1 font-mono">
+                  {selectedEmpStats.totalLeaveTakenDays} j
+                </p>
               </div>
 
-              <div className={`p-3.5 rounded-2xl border ${selectedEmpStats.isDebt ? 'bg-red-50 border-red-200' : 'bg-emerald-50 border-emerald-200'}`}>
+              <div
+                className={`p-3.5 rounded-2xl border ${selectedEmpStats.isDebt ? 'bg-red-50 border-red-200' : 'bg-emerald-50 border-emerald-200'}`}
+              >
                 <p className="text-2xs font-bold uppercase text-stone-500">Solde Actuel (Solde)</p>
-                <p className={`text-lg font-bold mt-1 font-mono ${selectedEmpStats.isDebt ? 'text-red-700' : 'text-emerald-700'}`}>
-                  {selectedEmpStats.isDebt ? `-${selectedEmpStats.debtDays.toFixed(1)} j` : `+${selectedEmpStats.balanceDays.toFixed(1)} j`}
+                <p
+                  className={`text-lg font-bold mt-1 font-mono ${selectedEmpStats.isDebt ? 'text-red-700' : 'text-emerald-700'}`}
+                >
+                  {selectedEmpStats.isDebt
+                    ? `-${selectedEmpStats.debtDays.toFixed(1)} j`
+                    : `+${selectedEmpStats.balanceDays.toFixed(1)} j`}
                 </p>
               </div>
             </div>
@@ -1125,10 +1308,17 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({
               <div className="bg-red-50 border border-red-200 p-4 rounded-2xl text-xs space-y-1.5">
                 <div className="flex items-center gap-2 font-bold text-red-900">
                   <AlertTriangle className="w-4 h-4 text-red-600 shrink-0" />
-                  <span>Dépassement des Jours Acquis (+{selectedEmpStats.exceededDays.toFixed(1)} jours en avance)</span>
+                  <span>
+                    Dépassement des Jours Acquis (+{selectedEmpStats.exceededDays.toFixed(1)} jours
+                    en avance)
+                  </span>
                 </div>
                 <p className="text-red-800 text-2xs leading-relaxed">
-                  L'employé a consommé {selectedEmpStats.totalLeaveTakenDays} jours de congé payé pour {selectedEmpStats.totalAccruedDays.toFixed(1)} jours accumulés par son travail. Il lui faudra environ <strong>~{selectedEmpStats.daysToPayback} jours de travail</strong> pour régulariser ce solde négatif.
+                  L'employé a consommé {selectedEmpStats.totalLeaveTakenDays} jours de congé payé
+                  pour {selectedEmpStats.totalAccruedDays.toFixed(1)} jours accumulés par son
+                  travail. Il lui faudra environ{' '}
+                  <strong>~{selectedEmpStats.daysToPayback} jours de travail</strong> pour
+                  régulariser ce solde négatif.
                 </p>
               </div>
             )}
@@ -1139,7 +1329,9 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({
                 <h4 className="text-sm font-bold text-stone-900 flex items-center gap-2">
                   <FileText className="w-4 h-4 text-stone-600" />
                   <span>Historique des Congés & Absences</span>
-                  <span className="text-2xs text-stone-400 font-normal">({selectedEmpRecords.length} enregistrement(s))</span>
+                  <span className="text-2xs text-stone-400 font-normal">
+                    ({selectedEmpRecords.length} enregistrement(s))
+                  </span>
                 </h4>
                 <button
                   onClick={() => {
@@ -1155,14 +1347,21 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({
               </div>
 
               {selectedEmpRecords.length === 0 ? (
-                <p className="text-xs text-stone-400 italic py-4 text-center">Aucune absence enregistrée pour cet employé.</p>
+                <p className="text-xs text-stone-400 italic py-4 text-center">
+                  Aucune absence enregistrée pour cet employé.
+                </p>
               ) : (
                 <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
                   {selectedEmpRecords.map((rec) => (
-                    <div key={rec.id} className="p-3 bg-stone-50 rounded-2xl border border-stone-200 text-xs flex justify-between items-center">
+                    <div
+                      key={rec.id}
+                      className="p-3 bg-stone-50 rounded-2xl border border-stone-200 text-xs flex justify-between items-center"
+                    >
                       <div>
                         <div className="flex items-center gap-2">
-                          <span className="font-bold text-stone-900">{LEAVE_TYPE_LABELS[rec.leaveType]}</span>
+                          <span className="font-bold text-stone-900">
+                            {LEAVE_TYPE_LABELS[rec.leaveType]}
+                          </span>
                           {rec.isPaid === false ? (
                             <span className="px-1.5 py-0.5 rounded text-3xs font-bold bg-amber-100 text-amber-900 border border-amber-200">
                               Sans solde
@@ -1174,7 +1373,9 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({
                           )}
                         </div>
                         <p className="text-2xs text-stone-500 mt-0.5">
-                          Du {new Date(rec.startDate).toLocaleDateString('fr-FR')} au {new Date(rec.endDate).toLocaleDateString('fr-FR')} {rec.notes ? `• ${rec.notes}` : ''}
+                          Du {new Date(rec.startDate).toLocaleDateString('fr-FR')} au{' '}
+                          {new Date(rec.endDate).toLocaleDateString('fr-FR')}{' '}
+                          {rec.notes ? `• ${rec.notes}` : ''}
                         </p>
                       </div>
                       <span className="font-bold font-mono text-stone-900 shrink-0">

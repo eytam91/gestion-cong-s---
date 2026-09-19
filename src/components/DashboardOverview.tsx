@@ -1,38 +1,93 @@
 import React, { useState } from 'react';
-import { 
-  Users, 
-  Clock, 
-  AlertTriangle, 
-  TrendingDown, 
-  CheckCircle2, 
-  Calendar, 
-  Plus, 
+import {
+  Users,
+  Clock,
+  AlertTriangle,
+  TrendingDown,
+  CheckCircle2,
+  Calendar,
+  Plus,
   ShieldAlert,
-  HeartPulse,
   Banknote,
   BarChart3,
-  TrendingUp,
-  Layers,
   Globe,
   Building2,
-  Briefcase,
-  Sparkles
 } from 'lucide-react';
-import { 
-  BarChart, 
-  Bar, 
-  XAxis, 
-  YAxis, 
-  CartesianGrid, 
-  Tooltip, 
-  Legend, 
-  ResponsiveContainer, 
-  Cell, 
-  ReferenceLine 
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend,
+  ResponsiveContainer,
+  Cell,
+  ReferenceLine,
 } from 'recharts';
 import { Employee, LeaveRecord } from '../types';
-import { calculateEmployeeStats, LEAVE_TYPE_LABELS } from '../utils/vacationCalc';
+import { calculateEmployeeStats } from '../utils/vacationCalc';
 import { VacationSimulator } from './VacationSimulator';
+
+interface ChartDatum {
+  name: string;
+  idNumber: string;
+  matriculeGL: string;
+  position: string;
+  status: string;
+  acquis: number;
+  pris: number;
+  solde: number;
+  isDebt: boolean;
+  debtDays: number;
+}
+
+interface TooltipRenderProps {
+  active?: boolean;
+  payload?: { payload: ChartDatum }[];
+}
+
+const CustomTooltip = ({ active, payload }: TooltipRenderProps) => {
+  if (active && payload && payload.length) {
+    const data = payload[0].payload;
+    return (
+      <div className="bg-stone-900 text-white p-3.5 rounded-xl shadow-xl text-xs space-y-2 border border-stone-700 min-w-[230px]">
+        <div className="border-b border-stone-800 pb-1.5 flex justify-between items-start gap-2">
+          <div>
+            <p className="font-bold text-sm text-amber-300">{data.name}</p>
+            <p className="text-2xs text-stone-400 font-mono">
+              {data.idNumber} {data.matriculeGL ? `• ${data.matriculeGL}` : ''} • {data.position}
+            </p>
+          </div>
+          <span className="text-3xs px-2 py-0.5 rounded bg-stone-800 text-stone-300 font-mono shrink-0">
+            {data.status.includes('EXPAT') ? 'EXPAT' : 'LOCAL'}
+          </span>
+        </div>
+        <div className="space-y-1.5">
+          <div className="flex justify-between items-center">
+            <span className="text-stone-400">Jours Acquis :</span>
+            <span className="font-bold text-emerald-400 font-mono">+{data.acquis} j</span>
+          </div>
+          <div className="flex justify-between items-center">
+            <span className="text-stone-400">Congés Pris :</span>
+            <span className="font-bold text-amber-400 font-mono">-{data.pris} j</span>
+          </div>
+          <div className="flex justify-between items-center pt-1.5 border-t border-stone-800">
+            <span className="font-semibold text-stone-300">Solde Actuel :</span>
+            {data.isDebt ? (
+              <span className="font-extrabold text-red-400 flex items-center gap-1 font-mono">
+                🔴 -{data.debtDays} j (Négatif)
+              </span>
+            ) : (
+              <span className="font-extrabold text-emerald-400 font-mono">+{data.solde} j</span>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
+  return null;
+};
 
 interface DashboardOverviewProps {
   employees: Employee[];
@@ -58,7 +113,10 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
   const totalEmployees = employees.length;
   const countLocal = employees.filter((e) => e.status === 'LOCAL').length;
   const countExpat = employees.filter((e) => e.status === 'EXPAT').length;
-  const totalDebtDays = statsList.reduce((acc, curr) => acc + (curr.stats.isDebt ? curr.stats.debtDays : 0), 0);
+  const totalDebtDays = statsList.reduce(
+    (acc, curr) => acc + (curr.stats.isDebt ? curr.stats.debtDays : 0),
+    0,
+  );
   const totalUnpaidLeaveDays = statsList.reduce((acc, curr) => acc + curr.stats.unpaidLeaveDays, 0);
   const exceededEmployees = statsList.filter((s) => s.stats.isExceededAllocatedDays);
 
@@ -79,58 +137,26 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
     contractType: employee.contractType === 'TYPE_A' ? 'Type A (30j/6m)' : 'Type B (30j/1an)',
   }));
 
-  const CustomTooltip = ({ active, payload }: any) => {
-    if (active && payload && payload.length) {
-      const data = payload[0].payload;
-      return (
-        <div className="bg-stone-900 text-white p-3.5 rounded-xl shadow-xl text-xs space-y-2 border border-stone-700 min-w-[230px]">
-          <div className="border-b border-stone-800 pb-1.5 flex justify-between items-start gap-2">
-            <div>
-              <p className="font-bold text-sm text-amber-300">{data.name}</p>
-              <p className="text-2xs text-stone-400 font-mono">
-                {data.idNumber} {data.matriculeGL ? `• ${data.matriculeGL}` : ''} • {data.position}
-              </p>
-            </div>
-            <span className="text-3xs px-2 py-0.5 rounded bg-stone-800 text-stone-300 font-mono shrink-0">
-              {data.status.includes('EXPAT') ? 'EXPAT' : 'LOCAL'}
-            </span>
-          </div>
-          <div className="space-y-1.5">
-            <div className="flex justify-between items-center">
-              <span className="text-stone-400">Jours Acquis :</span>
-              <span className="font-bold text-emerald-400 font-mono">+{data.acquis} j</span>
-            </div>
-            <div className="flex justify-between items-center">
-              <span className="text-stone-400">Congés Pris :</span>
-              <span className="font-bold text-amber-400 font-mono">-{data.pris} j</span>
-            </div>
-            <div className="flex justify-between items-center pt-1.5 border-t border-stone-800">
-              <span className="font-semibold text-stone-300">Solde Actuel :</span>
-              {data.isDebt ? (
-                <span className="font-extrabold text-red-400 flex items-center gap-1 font-mono">
-                  🔴 -{data.debtDays} j (Négatif)
-                </span>
-              ) : (
-                <span className="font-extrabold text-emerald-400 font-mono">
-                  +{data.solde} j
-                </span>
-              )}
-            </div>
-          </div>
-        </div>
-      );
-    }
-    return null;
-  };
-
   // Repartition globale des types d'absences
   const globalLeaves = {
-    congePaye: leaveRecords.filter((r) => r.leaveType === 'CONGE_PAYE').reduce((sum, r) => sum + r.daysCount, 0),
-    maladie: leaveRecords.filter((r) => r.leaveType === 'MALADIE_JUSTIFIEE').reduce((sum, r) => sum + r.daysCount, 0),
-    paternite: leaveRecords.filter((r) => r.leaveType === 'PATERNITE').reduce((sum, r) => sum + r.daysCount, 0),
-    mariage: leaveRecords.filter((r) => r.leaveType === 'MARIAGE').reduce((sum, r) => sum + r.daysCount, 0),
-    deces: leaveRecords.filter((r) => r.leaveType === 'DECES').reduce((sum, r) => sum + r.daysCount, 0),
-    autre: leaveRecords.filter((r) => r.leaveType === 'AUTRE').reduce((sum, r) => sum + r.daysCount, 0),
+    congePaye: leaveRecords
+      .filter((r) => r.leaveType === 'CONGE_PAYE')
+      .reduce((sum, r) => sum + r.daysCount, 0),
+    maladie: leaveRecords
+      .filter((r) => r.leaveType === 'MALADIE_JUSTIFIEE')
+      .reduce((sum, r) => sum + r.daysCount, 0),
+    paternite: leaveRecords
+      .filter((r) => r.leaveType === 'PATERNITE')
+      .reduce((sum, r) => sum + r.daysCount, 0),
+    mariage: leaveRecords
+      .filter((r) => r.leaveType === 'MARIAGE')
+      .reduce((sum, r) => sum + r.daysCount, 0),
+    deces: leaveRecords
+      .filter((r) => r.leaveType === 'DECES')
+      .reduce((sum, r) => sum + r.daysCount, 0),
+    autre: leaveRecords
+      .filter((r) => r.leaveType === 'AUTRE')
+      .reduce((sum, r) => sum + r.daysCount, 0),
   };
 
   return (
@@ -148,7 +174,8 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
               Gestion du Solde de Congés & Absences
             </h1>
             <p className="text-stone-300 text-xs sm:text-sm max-w-2xl leading-relaxed">
-              Suivez en temps réel les soldes de congés acquis, les avances consommées et le statut contractuel (Personnel Local vs Expatrié).
+              Suivez en temps réel les soldes de congés acquis, les avances consommées et le statut
+              contractuel (Personnel Local vs Expatrié).
             </p>
           </div>
 
@@ -185,23 +212,30 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
                 Dépassement des Jours Acquis ({exceededEmployees.length} employé(s))
               </h3>
               <p className="text-xs text-amber-800">
-                Ces employés ont consommé plus de congés payés que les jours accumulés par leur travail (solde négatif en avance).
+                Ces employés ont consommé plus de congés payés que les jours accumulés par leur
+                travail (solde négatif en avance).
               </p>
             </div>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 pt-1">
             {exceededEmployees.map(({ employee, stats }) => (
-              <div key={employee.id} className="bg-white p-3 rounded-xl border border-amber-200 text-xs flex justify-between items-center shadow-2xs">
+              <div
+                key={employee.id}
+                className="bg-white p-3 rounded-xl border border-amber-200 text-xs flex justify-between items-center shadow-2xs"
+              >
                 <div>
                   <div className="flex items-center gap-1.5">
                     <p className="font-bold text-stone-900">{employee.name}</p>
-                    <span className="font-mono text-[10px] text-stone-500 font-bold">({employee.idNumber})</span>
+                    <span className="font-mono text-[10px] text-stone-500 font-bold">
+                      ({employee.idNumber})
+                    </span>
                   </div>
                   <p className="text-red-700 font-bold mt-0.5">
                     Dépassement: +{stats.exceededDays.toFixed(1)} j en avance
                   </p>
                   <p className="text-2xs text-stone-500">
-                    Acquis: {stats.totalAccruedDays.toFixed(1)} j | Pris: {stats.totalLeaveTakenDays} j
+                    Acquis: {stats.totalAccruedDays.toFixed(1)} j | Pris:{' '}
+                    {stats.totalLeaveTakenDays} j
                   </p>
                 </div>
                 <button
@@ -221,7 +255,9 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
         {/* Total Employés & Repartition */}
         <div className="bg-white p-5 rounded-2xl border border-stone-200/80 shadow-xs flex items-center justify-between">
           <div>
-            <p className="text-xs font-semibold text-stone-400 uppercase tracking-wider">Effectif Global</p>
+            <p className="text-xs font-semibold text-stone-400 uppercase tracking-wider">
+              Effectif Global
+            </p>
             <p className="text-2xl font-bold text-stone-900 mt-1">{totalEmployees}</p>
             <div className="flex items-center gap-2 text-2xs text-stone-600 mt-1 font-semibold">
               <span className="text-teal-700">{countLocal} Local</span>
@@ -237,9 +273,12 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
         {/* Total Solde Négatif en Jours */}
         <div className="bg-white p-5 rounded-2xl border border-stone-200/80 shadow-xs flex items-center justify-between">
           <div>
-            <p className="text-xs font-semibold text-stone-400 uppercase tracking-wider">Solde Négatif Global</p>
+            <p className="text-xs font-semibold text-stone-400 uppercase tracking-wider">
+              Solde Négatif Global
+            </p>
             <p className="text-2xl font-bold text-red-600 mt-1 font-mono">
-              -{totalDebtDays.toFixed(1)} <span className="text-sm font-medium text-red-700">jours</span>
+              -{totalDebtDays.toFixed(1)}{' '}
+              <span className="text-sm font-medium text-red-700">jours</span>
             </p>
             <p className="text-xs text-stone-500 mt-0.5">
               Avances de congés à résorber par le travail
@@ -253,13 +292,14 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
         {/* Congés Non Payés (Sans Solde) */}
         <div className="bg-white p-5 rounded-2xl border border-stone-200/80 shadow-xs flex items-center justify-between">
           <div>
-            <p className="text-xs font-semibold text-stone-400 uppercase tracking-wider">Congés Sans Solde</p>
+            <p className="text-xs font-semibold text-stone-400 uppercase tracking-wider">
+              Congés Sans Solde
+            </p>
             <p className="text-2xl font-bold text-amber-600 mt-1 font-mono">
-              {totalUnpaidLeaveDays} <span className="text-sm font-medium text-amber-700">jours</span>
+              {totalUnpaidLeaveDays}{' '}
+              <span className="text-sm font-medium text-amber-700">jours</span>
             </p>
-            <p className="text-xs text-stone-500 mt-0.5">
-              Congés non rémunérés accordés
-            </p>
+            <p className="text-xs text-stone-500 mt-0.5">Congés non rémunérés accordés</p>
           </div>
           <div className="w-12 h-12 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center shrink-0">
             <Banknote className="w-6 h-6" />
@@ -269,9 +309,12 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
         {/* Congés Payés Pris */}
         <div className="bg-white p-5 rounded-2xl border border-stone-200/80 shadow-xs flex items-center justify-between">
           <div>
-            <p className="text-xs font-semibold text-stone-400 uppercase tracking-wider">Total Congés Consommés</p>
+            <p className="text-xs font-semibold text-stone-400 uppercase tracking-wider">
+              Total Congés Consommés
+            </p>
             <p className="text-2xl font-bold text-emerald-600 mt-1 font-mono">
-              {globalLeaves.congePaye} <span className="text-sm font-medium text-emerald-700">jours</span>
+              {globalLeaves.congePaye}{' '}
+              <span className="text-sm font-medium text-emerald-700">jours</span>
             </p>
             <p className="text-xs text-stone-500 mt-0.5">
               Total consommé sur l'ensemble de l'équipe
@@ -302,7 +345,8 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
                 Graphique des Soldes & Consommation par Employé
               </h3>
               <p className="text-xs text-stone-500 mt-0.5">
-                Comparatif visuel des jours acquis, des congés consommés et des soldes actuels pour chaque employé.
+                Comparatif visuel des jours acquis, des congés consommés et des soldes actuels pour
+                chaque employé.
               </p>
             </div>
             <div className="flex items-center gap-2 bg-stone-100 p-1 rounded-xl shrink-0 self-start sm:self-auto">
@@ -333,35 +377,41 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
 
           <div className="h-72 w-full pt-2">
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart
-                data={chartData}
-                margin={{ top: 10, right: 10, left: -10, bottom: 25 }}
-              >
+              <BarChart data={chartData} margin={{ top: 10, right: 10, left: -10, bottom: 25 }}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f5f5f4" />
-                <XAxis 
-                  dataKey="shortName" 
+                <XAxis
+                  dataKey="shortName"
                   tick={{ fill: '#57534e', fontSize: 11, fontWeight: 600 }}
                   tickLine={false}
                   axisLine={{ stroke: '#e7e5e4' }}
                   interval={0}
                 />
-                <YAxis 
+                <YAxis
                   tick={{ fill: '#78716c', fontSize: 11 }}
                   tickLine={false}
                   axisLine={{ stroke: '#e7e5e4' }}
                   unit=" j"
                 />
                 <Tooltip content={<CustomTooltip />} />
-                <Legend 
-                  wrapperStyle={{ paddingTop: 15, fontSize: 12 }} 
-                  iconType="circle"
-                />
+                <Legend wrapperStyle={{ paddingTop: 15, fontSize: 12 }} iconType="circle" />
                 <ReferenceLine y={0} stroke="#a8a29e" strokeDasharray="3 3" />
-                
+
                 {chartMode === 'all' ? (
                   <>
-                    <Bar dataKey="acquis" name="Jours Acquis" fill="#10b981" radius={[4, 4, 0, 0]} barSize={20} />
-                    <Bar dataKey="pris" name="Congés Pris" fill="#f59e0b" radius={[4, 4, 0, 0]} barSize={20} />
+                    <Bar
+                      dataKey="acquis"
+                      name="Jours Acquis"
+                      fill="#10b981"
+                      radius={[4, 4, 0, 0]}
+                      barSize={20}
+                    />
+                    <Bar
+                      dataKey="pris"
+                      name="Congés Pris"
+                      fill="#f59e0b"
+                      radius={[4, 4, 0, 0]}
+                      barSize={20}
+                    />
                     <Bar dataKey="solde" name="Solde Actuel" radius={[4, 4, 0, 0]} barSize={20}>
                       {chartData.map((entry, index) => (
                         <Cell key={`cell-${index}`} fill={entry.isDebt ? '#ef4444' : '#059669'} />
@@ -371,7 +421,10 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
                 ) : (
                   <Bar dataKey="solde" name="Solde Net (Jours)" radius={[6, 6, 0, 0]} barSize={34}>
                     {chartData.map((entry, index) => (
-                      <Cell key={`cell-solde-${index}`} fill={entry.isDebt ? '#ef4444' : '#10b981'} />
+                      <Cell
+                        key={`cell-solde-${index}`}
+                        fill={entry.isDebt ? '#ef4444' : '#10b981'}
+                      />
                     ))}
                   </Bar>
                 )}
@@ -385,16 +438,20 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
       <div className="bg-white rounded-2xl border border-stone-200/80 shadow-xs overflow-hidden">
         <div className="p-5 border-b border-stone-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div>
-            <h3 className="text-lg font-bold text-stone-900">Tableau Général des Soldes & Régularisations</h3>
+            <h3 className="text-lg font-bold text-stone-900">
+              Tableau Général des Soldes & Régularisations
+            </h3>
             <p className="text-xs text-stone-500 mt-0.5">
-              Visualisation du solde de congés avec Matricule, Poste, Statut (Personnel Local vs Expatrié) et régularisation estimée.
+              Visualisation du solde de congés avec Matricule, Poste, Statut (Personnel Local vs
+              Expatrié) et régularisation estimée.
             </p>
           </div>
         </div>
 
         {employees.length === 0 ? (
           <div className="p-10 text-center text-stone-500 text-xs">
-            Aucun collaborateur enregistré. Cliquez sur "Ajouter un Employé" dans l'onglet Effectif ou importez une liste.
+            Aucun collaborateur enregistré. Cliquez sur "Ajouter un Employé" dans l'onglet Effectif
+            ou importez une liste.
           </div>
         ) : (
           <div className="overflow-x-auto">
@@ -417,13 +474,18 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
                     <td className="py-4 px-6 font-semibold text-stone-900">
                       <div className="flex items-center gap-3">
                         <div className="relative">
-                          <div className={`w-9 h-9 rounded-xl font-bold text-xs flex items-center justify-center shrink-0 shadow-2xs text-white ${
-                            emp.status === 'EXPAT' ? 'bg-purple-900' : 'bg-stone-900'
-                          }`}>
+                          <div
+                            className={`w-9 h-9 rounded-xl font-bold text-xs flex items-center justify-center shrink-0 shadow-2xs text-white ${
+                              emp.status === 'EXPAT' ? 'bg-purple-900' : 'bg-stone-900'
+                            }`}
+                          >
                             {emp.name.charAt(0)}
                           </div>
                           {stats.isDebt && (
-                            <span className="absolute -top-1 -right-1 w-3 h-3 rounded-full bg-red-600 border-2 border-white ring-2 ring-red-400/50" title="Solde négatif à régulariser" />
+                            <span
+                              className="absolute -top-1 -right-1 w-3 h-3 rounded-full bg-red-600 border-2 border-white ring-2 ring-red-400/50"
+                              title="Solde négatif à régulariser"
+                            />
                           )}
                         </div>
                         <div>
@@ -436,7 +498,9 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
                               </span>
                             )}
                           </div>
-                          <p className="text-xs font-mono font-bold text-stone-600">{emp.idNumber || 'SANS-MAT'}</p>
+                          <p className="text-xs font-mono font-bold text-stone-600">
+                            {emp.idNumber || 'SANS-MAT'}
+                          </p>
                         </div>
                       </div>
                     </td>
@@ -444,7 +508,9 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
                     {/* Poste & Statut */}
                     <td className="py-4 px-6">
                       <div className="space-y-1">
-                        <p className="text-xs font-semibold text-stone-800">{emp.position || 'Collaborateur'}</p>
+                        <p className="text-xs font-semibold text-stone-800">
+                          {emp.position || 'Collaborateur'}
+                        </p>
                         {emp.status === 'EXPAT' ? (
                           <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-100 text-purple-900 border border-purple-300">
                             <Globe className="w-3 h-3 text-purple-700" />
@@ -480,8 +546,12 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
                     {/* Acquis / Pris */}
                     <td className="py-4 px-6 text-stone-700 font-mono">
                       <div className="text-xs space-y-0.5">
-                        <p className="text-emerald-700 font-medium">Acquis: +{stats.totalAccruedDays.toFixed(1)} j</p>
-                        <p className="text-stone-600 font-medium">Pris: {stats.totalLeaveTakenDays} j</p>
+                        <p className="text-emerald-700 font-medium">
+                          Acquis: +{stats.totalAccruedDays.toFixed(1)} j
+                        </p>
+                        <p className="text-stone-600 font-medium">
+                          Pris: {stats.totalLeaveTakenDays} j
+                        </p>
                       </div>
                     </td>
 
@@ -495,7 +565,9 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
                           </span>
                           <div className="text-2xs font-extrabold text-red-700 bg-red-50 border border-red-200 px-2.5 py-1 rounded-md flex items-center gap-1 shadow-2xs">
                             <AlertTriangle className="w-3.5 h-3.5 text-red-600 shrink-0" />
-                            <span>Régulariser <strong>{stats.debtDays.toFixed(1)} jours</strong></span>
+                            <span>
+                              Régulariser <strong>{stats.debtDays.toFixed(1)} jours</strong>
+                            </span>
                           </div>
                         </div>
                       ) : (
@@ -504,7 +576,9 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
                             <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
                             Solde: +{stats.balanceDays.toFixed(1)} j
                           </span>
-                          <p className="text-2xs text-emerald-700 font-medium">✓ Dans les jours acquis</p>
+                          <p className="text-2xs text-emerald-700 font-medium">
+                            ✓ Dans les jours acquis
+                          </p>
                         </div>
                       )}
                     </td>
@@ -514,15 +588,15 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
                       {stats.isDebt ? (
                         <div className="space-y-0.5">
                           <span className="inline-flex items-center gap-1 text-xs font-bold text-amber-800 bg-amber-50 px-2.5 py-1 rounded-md border border-amber-200 font-mono">
-                            <Clock className="w-3.5 h-3.5 text-amber-600" />
-                            ~{stats.daysToPayback} jours de travail
+                            <Clock className="w-3.5 h-3.5 text-amber-600" />~{stats.daysToPayback}{' '}
+                            jours de travail
                           </span>
-                          <p className="text-2xs text-stone-500">
-                            Pour résorber le solde négatif
-                          </p>
+                          <p className="text-2xs text-stone-500">Pour résorber le solde négatif</p>
                         </div>
                       ) : (
-                        <span className="text-xs text-stone-400 italic">Aucune régularisation requise</span>
+                        <span className="text-xs text-stone-400 italic">
+                          Aucune régularisation requise
+                        </span>
                       )}
                     </td>
 
