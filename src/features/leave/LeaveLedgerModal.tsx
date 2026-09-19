@@ -11,9 +11,9 @@ import {
   FileText,
   AlertCircle,
 } from 'lucide-react';
-import { Employee, LeaveRecord, LeaveType } from '../types';
-import { calculateEmployeeStats, LEAVE_TYPE_LABELS } from '../utils/vacationCalc';
-import { ConfirmModal } from './ConfirmModal';
+import { Employee, LeaveRecord, LeaveType } from '@/types';
+import { calculateEmployeeStats, LEAVE_TYPE_LABELS } from '@/features/leave/vacationCalc';
+import { ConfirmModal } from '@/components/ui/ConfirmModal';
 
 interface LeaveLedgerModalProps {
   isOpen: boolean;

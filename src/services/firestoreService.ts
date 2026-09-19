@@ -9,8 +9,8 @@ import {
   where,
   writeBatch,
 } from 'firebase/firestore';
-import { db } from '../lib/firebase';
-import { Employee, LeaveRecord } from '../types';
+import { db } from '@/lib/firebase';
+import { Employee, LeaveRecord } from '@/types';
 
 const EMPLOYEES_COLL = 'employees';
 const LEAVE_RECORDS_COLL = 'leave_records';

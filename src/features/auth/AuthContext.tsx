@@ -8,9 +8,9 @@ import {
   signOut,
   updateProfile,
 } from 'firebase/auth';
-import { auth, googleAuthProvider } from '../lib/firebase';
-import { usernameToEmail } from '../lib/username';
-import { DbUser, createUserProfile, getUserProfile } from '../services/firestoreService';
+import { auth, googleAuthProvider } from '@/lib/firebase';
+import { usernameToEmail } from '@/lib/username';
+import { DbUser, createUserProfile, getUserProfile } from '@/services/firestoreService';
 
 function frenchAuthError(code: string | undefined): string {
   switch (code) {

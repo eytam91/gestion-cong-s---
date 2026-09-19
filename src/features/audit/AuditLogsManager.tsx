@@ -16,8 +16,12 @@ import {
   Server,
   AlertCircle,
 } from 'lucide-react';
-import { ActivityLog } from '../types';
-import { fetchActivityLogs, getDeviceSessions, getOrCreateDeviceId } from '../utils/auditLogger';
+import { ActivityLog } from '@/types';
+import {
+  fetchActivityLogs,
+  getDeviceSessions,
+  getOrCreateDeviceId,
+} from '@/features/audit/auditLogger';
 
 interface AuditLogsManagerProps {
   /** Omitted for non-admins, who may not wipe the database. */

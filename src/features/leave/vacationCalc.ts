@@ -1,4 +1,4 @@
-import { Employee, LeaveRecord, EmployeeStats, LeaveType } from '../types';
+import { Employee, LeaveRecord, EmployeeStats, LeaveType } from '@/types';
 
 // Taux d'acquisition quotidien de congés en jours
 export class DailyAccrualRates {

@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Calculator, ArrowRight, CheckCircle2, Clock, Sparkles } from 'lucide-react';
-import { Employee, LeaveRecord } from '../types';
-import { calculateEmployeeStats } from '../utils/vacationCalc';
+import { Employee, LeaveRecord } from '@/types';
+import { calculateEmployeeStats } from '@/features/leave/vacationCalc';
 
 interface VacationSimulatorProps {
   employees: Employee[];

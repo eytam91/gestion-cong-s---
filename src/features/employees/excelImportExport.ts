@@ -1,6 +1,6 @@
 import * as XLSX from 'xlsx';
-import { Employee, EmployeeStatus, ContractType, LeaveRecord } from '../types';
-import { calculateEmployeeStats } from './vacationCalc';
+import { Employee, EmployeeStatus, ContractType, LeaveRecord } from '@/types';
+import { calculateEmployeeStats } from '@/features/leave/vacationCalc';
 
 export interface ParsedEmployeeRow {
   index: number;

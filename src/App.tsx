@@ -17,17 +17,17 @@ import {
   Clock,
   Lock,
 } from 'lucide-react';
-import { Employee, LeaveRecord } from './types';
-import { DashboardOverview } from './components/DashboardOverview';
-import { EmployeeManager } from './components/EmployeeManager';
-import { LedgerHistory } from './components/LedgerHistory';
-import { LeaveLedgerModal } from './components/LeaveLedgerModal';
-import { AuditLogsManager } from './components/AuditLogsManager';
-import { UserManager } from './components/UserManager';
-import { AuthModal } from './components/AuthModal';
-import { ConfirmModal } from './components/ConfirmModal';
-import { registerDeviceConnection, addActivityLog } from './utils/auditLogger';
-import { useAuth } from './context/AuthContext';
+import { Employee, LeaveRecord } from '@/types';
+import { DashboardOverview } from '@/features/dashboard/DashboardOverview';
+import { EmployeeManager } from '@/features/employees/EmployeeManager';
+import { LedgerHistory } from '@/features/leave/LedgerHistory';
+import { LeaveLedgerModal } from '@/features/leave/LeaveLedgerModal';
+import { AuditLogsManager } from '@/features/audit/AuditLogsManager';
+import { UserManager } from '@/features/users/UserManager';
+import { AuthModal } from '@/features/auth/AuthModal';
+import { ConfirmModal } from '@/components/ui/ConfirmModal';
+import { registerDeviceConnection, addActivityLog } from '@/features/audit/auditLogger';
+import { useAuth } from '@/features/auth/AuthContext';
 import {
   fetchAllData,
   fetchEmployees,
@@ -38,7 +38,7 @@ import {
   saveLeaveRecord,
   deleteLeaveRecordDoc,
   clearAllFirestoreData,
-} from './services/firestoreService';
+} from '@/services/firestoreService';
 
 type Tab = 'dashboard' | 'employees' | 'ledger' | 'audit' | 'users';
 

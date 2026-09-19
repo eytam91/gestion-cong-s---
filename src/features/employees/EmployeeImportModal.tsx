@@ -16,14 +16,14 @@ import {
   Edit2,
   Trash2,
 } from 'lucide-react';
-import { Employee, EmployeeStatus, ContractType } from '../types';
-import { ConfirmModal } from './ConfirmModal';
+import { Employee, EmployeeStatus, ContractType } from '@/types';
+import { ConfirmModal } from '@/components/ui/ConfirmModal';
 import {
   parseExcelOrCsvFile,
   downloadEmployeeExcelTemplate,
   ParsedEmployeeRow,
   ParseResult,
-} from '../utils/excelImportExport';
+} from '@/features/employees/excelImportExport';
 
 interface EmployeeImportModalProps {
   isOpen: boolean;

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { DailyAccrualRates, calculateEmployeeStats } from './vacationCalc';
-import { Employee, LeaveRecord } from '../types';
+import { DailyAccrualRates, calculateEmployeeStats } from '@/features/leave/vacationCalc';
+import { Employee, LeaveRecord } from '@/types';
 
 const employee = (overrides: Partial<Employee> = {}): Employee => ({
   id: 'emp-1',

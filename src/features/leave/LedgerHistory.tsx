@@ -13,9 +13,9 @@ import {
   FileSpreadsheet,
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
-import { Employee, EmployeeStatus, LeaveRecord, LeaveType } from '../types';
-import { LEAVE_TYPE_LABELS, LEAVE_TYPE_COLORS } from '../utils/vacationCalc';
-import { ConfirmModal } from './ConfirmModal';
+import { Employee, EmployeeStatus, LeaveRecord, LeaveType } from '@/types';
+import { LEAVE_TYPE_LABELS, LEAVE_TYPE_COLORS } from '@/features/leave/vacationCalc';
+import { ConfirmModal } from '@/components/ui/ConfirmModal';
 
 interface LedgerHistoryProps {
   employees: Employee[];

@@ -3,7 +3,7 @@ import {
   normalizeExcelContract,
   normalizeExcelDate,
   normalizeExcelStatus,
-} from './excelImportExport';
+} from '@/features/employees/excelImportExport';
 
 describe('normalizeExcelDate', () => {
   it('passes through ISO dates', () => {

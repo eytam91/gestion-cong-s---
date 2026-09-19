@@ -7,8 +7,8 @@ import {
   query,
   setDoc,
 } from 'firebase/firestore';
-import { db } from '../lib/firebase';
-import { ActivityLog, AuditActor, DeviceSession } from '../types';
+import { db } from '@/lib/firebase';
+import { ActivityLog, AuditActor, DeviceSession } from '@/types';
 
 const DEVICE_ID_KEY = 'app_device_id_v1';
 const DEVICE_SESSIONS_KEY = 'app_device_sessions_v1';

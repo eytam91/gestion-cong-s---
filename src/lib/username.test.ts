@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { usernameToEmail } from './username';
+import { usernameToEmail } from '@/lib/username';
 
 describe('usernameToEmail', () => {
   it('maps a bare username onto the local domain', () => {

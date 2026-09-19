@@ -25,9 +25,9 @@ import {
   Cell,
   ReferenceLine,
 } from 'recharts';
-import { Employee, LeaveRecord } from '../types';
-import { calculateEmployeeStats } from '../utils/vacationCalc';
-import { VacationSimulator } from './VacationSimulator';
+import { Employee, LeaveRecord } from '@/types';
+import { calculateEmployeeStats } from '@/features/leave/vacationCalc';
+import { VacationSimulator } from '@/features/leave/VacationSimulator';
 
 interface ChartDatum {
   name: string;

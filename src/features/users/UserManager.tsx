@@ -1,15 +1,15 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Shield, Trash2, Search, RefreshCw, AlertCircle, Clock } from 'lucide-react';
-import { useAuth } from '../context/AuthContext';
+import { useAuth } from '@/features/auth/AuthContext';
 import {
   DbUser,
   UserRole,
   deleteUserDoc,
   fetchUsers,
   setUserRole,
-} from '../services/firestoreService';
-import { addActivityLog } from '../utils/auditLogger';
-import { ConfirmModal } from './ConfirmModal';
+} from '@/services/firestoreService';
+import { addActivityLog } from '@/features/audit/auditLogger';
+import { ConfirmModal } from '@/components/ui/ConfirmModal';
 
 const ROLE_LABELS: Record<UserRole, string> = {
   ADMIN: 'ADMIN (Administrateur Total)',
