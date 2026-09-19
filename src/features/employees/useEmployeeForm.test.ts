@@ -57,7 +57,9 @@ describe('validateEmployeeForm', () => {
 
   it('rejects a hire date outside the supported range', () => {
     expect(validateEmployeeForm(validValues({ hireDate: '1850-01-01' }), []).hireDate).toBeTruthy();
-    expect(validateEmployeeForm(validValues({ hireDate: 'pas-une-date' }), []).hireDate).toBeTruthy();
+    expect(
+      validateEmployeeForm(validValues({ hireDate: 'pas-une-date' }), []).hireDate,
+    ).toBeTruthy();
   });
 
   it('rejects names and positions that are too short', () => {
