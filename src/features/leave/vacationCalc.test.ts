@@ -26,19 +26,61 @@ const leave = (overrides: Partial<LeaveRecord> = {}): LeaveRecord => ({
 });
 
 describe('calculateEmployeeStats', () => {
-  it('accrues at the Type A rate of 30 days per 6 months', () => {
+  it('grants a Type A employee 30 days after 5 months (152.5 days) of work', () => {
+    expect(152.5 * DailyAccrualRates.TYPE_A).toBeCloseTo(30, 10);
+  });
+
+  it('grants a Type B employee 30 days after 11 months (335 days) of work', () => {
+    expect(335 * DailyAccrualRates.TYPE_B).toBeCloseTo(30, 10);
+  });
+
+  it('counts every elapsed day as worked while no leave has been taken', () => {
     const stats = calculateEmployeeStats(employee(), [], '2024-07-01');
 
     expect(stats.daysSinceHire).toBe(182);
+    expect(stats.daysWorked).toBe(182);
     expect(stats.totalAccruedDays).toBeCloseTo(182 * DailyAccrualRates.TYPE_A, 5);
-    expect(stats.totalAccruedDays).toBeCloseTo(29.92, 2);
   });
 
-  it('accrues at half the rate on a Type B contract', () => {
+  it('accrues more slowly on a Type B contract than on Type A', () => {
     const typeA = calculateEmployeeStats(employee(), [], '2024-07-01');
     const typeB = calculateEmployeeStats(employee({ contractType: 'TYPE_B' }), [], '2024-07-01');
 
-    expect(typeB.totalAccruedDays).toBeCloseTo(typeA.totalAccruedDays / 2, 5);
+    expect(typeB.totalAccruedDays).toBeLessThan(typeA.totalAccruedDays);
+    expect(typeA.totalAccruedDays / typeB.totalAccruedDays).toBeCloseTo(335 / 152.5, 5);
+  });
+
+  // The rule that changed: accrual follows days actually worked, so an employee
+  // does not keep earning leave while they are away on it.
+  it('stops accruing during paid leave and unpaid leave', () => {
+    const stats = calculateEmployeeStats(
+      employee(),
+      [leave({ id: 'r1', daysCount: 30 }), leave({ id: 'r2', daysCount: 10, isPaid: false })],
+      '2024-07-01',
+    );
+
+    expect(stats.daysWorked).toBe(182 - 30 - 10);
+    expect(stats.totalAccruedDays).toBeCloseTo(142 * DailyAccrualRates.TYPE_A, 5);
+  });
+
+  it('keeps accruing through sick and family leave', () => {
+    const stats = calculateEmployeeStats(
+      employee(),
+      [
+        leave({ id: 'r1', leaveType: 'MALADIE_JUSTIFIEE', daysCount: 5 }),
+        leave({ id: 'r2', leaveType: 'DECES', daysCount: 3 }),
+      ],
+      '2024-07-01',
+    );
+
+    expect(stats.daysWorked).toBe(182);
+  });
+
+  it('never reports negative days worked when leave exceeds the elapsed period', () => {
+    const stats = calculateEmployeeStats(employee(), [leave({ daysCount: 400 })], '2024-07-01');
+
+    expect(stats.daysWorked).toBe(0);
+    expect(stats.totalAccruedDays).toBe(0);
   });
 
   it('deducts paid leave from the balance', () => {

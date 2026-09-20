@@ -1,9 +1,11 @@
 import { Employee, LeaveRecord, EmployeeStats, LeaveType } from '@/types';
 
-// Taux d'acquisition quotidien de congés en jours
+// Taux d'acquisition quotidien de congés en jours :
+// - TYPE_A (Cycle 6 mois / 182.5 jours) : 5 mois de travail (152.5 jours) pour acquérir les 30 jours de congés du 6e mois.
+// - TYPE_B (Cycle annuel 12 mois / 365 jours) : 11 mois de travail (335 jours) pour acquérir les 30 jours de congés du 12e mois.
 export class DailyAccrualRates {
-  static readonly TYPE_A = 30 / 182.5; // ~0.16438356 j/j (30 jours tous les 6 mois)
-  static readonly TYPE_B = 30 / 365; // ~0.08219178 j/j (30 jours par an)
+  static readonly TYPE_A = 30 / (182.5 - 30); // 30 / 152.5 ≈ 0.19672131 j/j (30 jours acquis après 5 mois de travail)
+  static readonly TYPE_B = 30 / (365 - 30); // 30 / 335 ≈ 0.08955224 j/j (30 jours acquis après 11 mois de travail)
 }
 
 export const LEAVE_TYPE_LABELS: Record<LeaveType, string> = {
@@ -47,10 +49,6 @@ export function calculateEmployeeStats(
 
   const dailyAccrualRate =
     employee.contractType === 'TYPE_A' ? DailyAccrualRates.TYPE_A : DailyAccrualRates.TYPE_B;
-
-  // Total des jours accumulés théoriques par le travail
-  const rawAccrued = daysSinceHire * dailyAccrualRate;
-  const totalAccruedDays = Math.max(0, rawAccrued);
 
   // Filtrer les enregistrements de cet employé
   const empRecords = leaveRecords.filter((r) => r.employeeId === employee.id);
@@ -96,6 +94,15 @@ export function calculateEmployeeStats(
     }
   });
 
+  // Jours effectivement travaillés ouvrant droit à l'acquisition de congés.
+  // Pendant les congés payés (le 6e mois pour Type A ou le 12e mois pour Type B)
+  // et les congés sans solde, l'employé est en vacances/absence et ne travaille pas.
+  const daysWorked = Math.max(0, daysSinceHire - congePayeDays - unpaidLeaveDays);
+
+  // Total des jours de congés acquis par le travail effectif
+  const rawAccrued = daysWorked * dailyAccrualRate;
+  const totalAccruedDays = Math.max(0, rawAccrued);
+
   // Solde de congés payés = (acquis par activité + jours de récupération) - (congés payés pris)
   const balanceDays = totalAccruedDays + recuperationDays - congePayeDays;
 
@@ -109,6 +116,7 @@ export function calculateEmployeeStats(
 
   return {
     daysSinceHire,
+    daysWorked,
     dailyAccrualRate,
     totalAccruedDays,
     totalLeaveTakenDays: congePayeDays,

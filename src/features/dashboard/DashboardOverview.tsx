@@ -28,6 +28,7 @@ import {
 import { Employee, LeaveRecord } from '@/types';
 import { calculateEmployeeStats } from '@/features/leave/vacationCalc';
 import { VacationSimulator } from '@/features/leave/VacationSimulator';
+import { LeaveCalendar } from '@/features/leave/LeaveCalendar';
 
 interface ChartDatum {
   name: string;
@@ -134,7 +135,10 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
     solde: Number((stats.balanceDays ?? 0).toFixed(1)),
     isDebt: stats.isDebt ?? false,
     debtDays: Number((stats.debtDays ?? 0).toFixed(1)),
-    contractType: employee.contractType === 'TYPE_A' ? 'Type A (30j/6m)' : 'Type B (30j/1an)',
+    contractType:
+      employee.contractType === 'TYPE_A'
+        ? 'Type A (5m travail + 1m congé)'
+        : 'Type B (11m travail + 1m congé)',
   }));
 
   // Repartition globale des types d'absences
@@ -325,6 +329,9 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
           </div>
         </div>
       </div>
+
+      {/* Calendar View */}
+      <LeaveCalendar employees={employees} leaveRecords={leaveRecords} />
 
       {/* Simulator for 30-day leave projection on previous solde */}
       {employees.length > 0 && (
@@ -530,11 +537,11 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
                       <div className="space-y-1">
                         {emp.contractType === 'TYPE_A' ? (
                           <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-50 text-emerald-800 border border-emerald-200/80">
-                            Type A (30j / 6m)
+                            Type A (30j / 5m travail)
                           </span>
                         ) : (
                           <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-blue-50 text-blue-800 border border-blue-200/80">
-                            Type B (30j / 12m)
+                            Type B (30j / 11m travail)
                           </span>
                         )}
                         <p className="text-xs text-stone-500 font-medium">

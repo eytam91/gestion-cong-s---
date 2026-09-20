@@ -62,7 +62,11 @@ const CONTRACT_OPTIONS: {
   {
     value: 'TYPE_A',
     title: 'TYPE_A (6 mois)',
-    lines: ['• 30 jours / 6 mois', '• ~0.1644 j/jour', '• Cycle semestriel'],
+    lines: [
+      '• 30j après 5 mois de travail',
+      '• 6e mois : 30j de congés',
+      '• ~0.1967 j/j travaillé (6 j/m)',
+    ],
     icon: <BadgeCheck className="w-4 h-4 text-emerald-600" />,
     active:
       'bg-emerald-50 border-emerald-500 text-emerald-900 font-bold ring-1 ring-emerald-500/30',
@@ -70,7 +74,11 @@ const CONTRACT_OPTIONS: {
   {
     value: 'TYPE_B',
     title: 'TYPE_B (12 mois)',
-    lines: ['• 30 jours / an', '• ~0.0822 j/jour', '• Cycle annuel'],
+    lines: [
+      '• 30j après 11 mois de travail',
+      '• 12e mois : 30j de congés',
+      '• ~0.0896 j/j travaillé (~2.73 j/m)',
+    ],
     icon: <Briefcase className="w-4 h-4 text-blue-600" />,
     active: 'bg-blue-50 border-blue-500 text-blue-900 font-bold ring-1 ring-blue-500/30',
   },

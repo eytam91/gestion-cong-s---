@@ -261,8 +261,8 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({
             label: 'Cycle de Congés',
             value:
               form.values.contractType === 'TYPE_A'
-                ? 'Type A (30 jours / 6 mois)'
-                : 'Type B (30 jours / 12 mois)',
+                ? 'Type A (30j acquis / 5 mois travail)'
+                : 'Type B (30j acquis / 11 mois travail)',
             icon: <BadgeCheck className="w-3.5 h-3.5 text-stone-400" />,
           },
         ]}

@@ -62,15 +62,23 @@ firebase deploy --only firestore:rules
 
 ## Calcul des soldes
 
-Deux cycles d'acquisition, dans `src/utils/vacationCalc.ts` :
+Deux cycles d'acquisition, dans `src/features/leave/vacationCalc.ts`. Les droits
+s'acquièrent sur les **jours effectivement travaillés** : le mois de congé du
+cycle n'ouvre pas lui-même de nouveaux droits.
 
-- **TYPE_A** — 30 jours par semestre, soit `30 / 182.5` ≈ 0,1644 j/jour
-- **TYPE_B** — 30 jours par an, soit `30 / 365` ≈ 0,0822 j/jour
+| Contrat    | Cycle     | Travail ouvrant droit | Taux quotidien          |
+| ---------- | --------- | --------------------- | ----------------------- |
+| **TYPE_A** | 6 mois    | 5 mois (152,5 j)      | `30 / 152.5` ≈ 0,1967 j |
+| **TYPE_B** | 12 mois   | 11 mois (335 j)       | `30 / 335` ≈ 0,0896 j   |
 
-Le solde vaut `(jours acquis + récupérations) − congés payés pris`. Un solde
-négatif est signalé comme dette, accompagné du nombre de jours de travail
-nécessaires pour la résorber. Les congés maladie, paternité, mariage, décès et
-les congés sans solde n'entament pas le solde de congés payés.
+`jours travaillés = jours depuis l'embauche − congés payés pris − congés sans
+solde`. Le solde vaut `(jours acquis + récupérations) − congés payés pris`. Un
+solde négatif est signalé comme dette, accompagné du nombre de jours de travail
+nécessaires pour la résorber.
+
+Les congés maladie, paternité, mariage et décès n'entament pas le solde de
+congés payés **et** continuent d'ouvrir des droits ; les congés payés et les
+congés sans solde suspendent l'acquisition.
 
 ## Import Excel
 
