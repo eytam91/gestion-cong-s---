@@ -21,6 +21,7 @@ import { ConfirmModal } from '@/components/ui/ConfirmModal';
 import {
   parseExcelOrCsvFile,
   downloadEmployeeExcelTemplate,
+  normalizeExcelDate,
   ParsedEmployeeRow,
   ParseResult,
 } from '@/features/employees/excelImportExport';
@@ -109,13 +110,25 @@ export const EmployeeImportModal: React.FC<EmployeeImportModalProps> = ({
         if (idx !== index) return row;
         const updated = { ...row, [field]: value };
 
-        // Re-validate row
+        // Re-validate row. The hire date must be checked here too: it drives every
+        // accrual figure, and without it an edit to any other cell would clear the
+        // parser's date error and let the row import with an empty hireDate.
         const validationErrors: string[] = [];
         if (!updated.name || updated.name.trim().length < 2) {
           validationErrors.push('Nom trop court (min. 2 caractères)');
         }
         if (!updated.idNumber || updated.idNumber.trim().length === 0) {
           validationErrors.push('N° Matricule manquant');
+        }
+        const normalizedHireDate = normalizeExcelDate(updated.hireDate);
+        if (!normalizedHireDate) {
+          validationErrors.push(
+            updated.hireDate
+              ? `Date d'embauche illisible : "${updated.hireDate}" (format attendu AAAA-MM-JJ)`
+              : "Date d'embauche manquante",
+          );
+        } else if (normalizedHireDate > new Date().toISOString().split('T')[0]) {
+          validationErrors.push(`Date d'embauche dans le futur : ${normalizedHireDate}`);
         }
         updated.isValid = validationErrors.length === 0;
         updated.validationErrors = validationErrors;

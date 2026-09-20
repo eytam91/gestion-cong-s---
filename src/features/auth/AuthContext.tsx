@@ -48,6 +48,8 @@ interface AuthContextType {
   isAdmin: boolean;
   isStaff: boolean;
   isPending: boolean;
+  /** The profile could not be read, so the role is unknown rather than absent. */
+  profileError: boolean;
   signInWithGoogle: () => Promise<void>;
   signInWithEmail: (usernameOrEmail: string, password: string) => Promise<void>;
   registerNewAccount: (
@@ -66,6 +68,7 @@ const AuthContext = createContext<AuthContextType>({
   isAdmin: false,
   isStaff: false,
   isPending: false,
+  profileError: false,
   signInWithGoogle: async () => {},
   signInWithEmail: async () => {},
   registerNewAccount: async () => {},
@@ -77,6 +80,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [user, setUser] = useState<FirebaseUser | null>(null);
   const [dbUser, setDbUser] = useState<DbUser | null>(null);
   const [loading, setLoading] = useState(true);
+  const [profileError, setProfileError] = useState(false);
 
   /**
    * The role is always read back from Firestore rather than cached in
@@ -97,6 +101,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (!currentUser || currentUser.isAnonymous) {
         setUser(null);
         setDbUser(null);
+        setProfileError(false);
         setLoading(false);
         return;
       }
@@ -104,9 +109,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setUser(currentUser);
       try {
         setDbUser(await loadProfile(currentUser));
+        setProfileError(false);
       } catch (err) {
         console.error('Impossible de charger le profil utilisateur:', err);
         setDbUser(null);
+        // Distinguish "we could not read the role" from "the role grants nothing":
+        // otherwise a transient Firestore failure looks like a refused account.
+        setProfileError(true);
       } finally {
         setLoading(false);
       }
@@ -116,8 +125,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, [loadProfile]);
 
   const refreshProfile = useCallback(async () => {
-    if (auth.currentUser) {
+    if (!auth.currentUser) return;
+    try {
       setDbUser(await loadProfile(auth.currentUser));
+      setProfileError(false);
+    } catch (err) {
+      console.error('Impossible de charger le profil utilisateur:', err);
+      setDbUser(null);
+      setProfileError(true);
     }
   }, [loadProfile]);
 
@@ -182,6 +197,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         isAdmin,
         isStaff,
         isPending,
+        profileError,
         signInWithGoogle,
         signInWithEmail,
         registerNewAccount,

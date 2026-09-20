@@ -1,4 +1,4 @@
-import React, { Suspense, lazy, useMemo, useState } from 'react';
+import React, { Suspense, lazy, useEffect, useMemo, useState } from 'react';
 import {
   AlertCircle,
   Building2,
@@ -17,11 +17,11 @@ import {
   User as UserIcon,
   Users,
 } from 'lucide-react';
-import { Employee } from '@/types';
 import { AccessGate } from '@/components/AccessGate';
 import { ConfirmModal } from '@/components/ui/ConfirmModal';
 import { AuthModal } from '@/features/auth/AuthModal';
 import { useAuth } from '@/features/auth/AuthContext';
+import { registerDeviceConnection } from '@/features/audit/auditLogger';
 import { useHrData } from '@/hooks/useHrData';
 
 // Each tab is its own chunk: recharts and xlsx are heavy and most sessions
@@ -55,7 +55,17 @@ const Spinner: React.FC<{ label: string }> = ({ label }) => (
 );
 
 export default function App() {
-  const { user, dbUser, logout, isAdmin, isStaff, isPending, loading: authLoading } = useAuth();
+  const {
+    user,
+    dbUser,
+    logout,
+    isAdmin,
+    isStaff,
+    isPending,
+    profileError,
+    refreshProfile,
+    loading: authLoading,
+  } = useAuth();
 
   const actor = useMemo(
     () => ({ uid: dbUser?.uid ?? '', name: dbUser?.name ?? 'Inconnu' }),
@@ -68,7 +78,11 @@ export default function App() {
   const [modalInitialEmployeeId, setModalInitialEmployeeId] = useState<string | undefined>();
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [showClearConfirm, setShowClearConfirm] = useState(false);
-  const [employeeToDelete, setEmployeeToDelete] = useState<Employee | null>(null);
+
+  // Records this browser in the device list the audit screen reads back.
+  useEffect(() => {
+    registerDeviceConnection();
+  }, []);
 
   const openLeaveModal = (employeeId?: string) => {
     setModalInitialEmployeeId(employeeId);
@@ -116,6 +130,28 @@ export default function App() {
       Se déconnecter
     </button>
   );
+
+  if (profileError) {
+    return (
+      <AccessGate
+        icon={<AlertCircle className="w-6 h-6 text-amber-400" />}
+        title="Profil indisponible"
+        message="Votre profil n'a pas pu être chargé depuis Cloud Firestore. Vos droits d'accès sont donc inconnus. Vérifiez votre connexion puis réessayez."
+        action={
+          <div className="flex items-center justify-center gap-2">
+            <button
+              onClick={() => void refreshProfile()}
+              className="inline-flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold px-4 py-2.5 rounded-xl transition-all cursor-pointer"
+            >
+              <RefreshCw className="w-4 h-4" />
+              Réessayer
+            </button>
+            {signOutButton}
+          </div>
+        }
+      />
+    );
+  }
 
   if (isPending) {
     return (
@@ -291,9 +327,12 @@ export default function App() {
                 leaveRecords={data.leaveRecords}
                 onAddEmployee={data.addEmployee}
                 onUpdateEmployee={data.updateEmployee}
-                onDeleteEmployee={(id) =>
-                  setEmployeeToDelete(data.employees.find((e) => e.id === id) ?? null)
-                }
+                onDeleteEmployee={(id) => {
+                  // EmployeeManager already confirms; a second dialog here would
+                  // ask the same question twice.
+                  const target = data.employees.find((e) => e.id === id);
+                  if (target) void data.deleteEmployee(target);
+                }}
                 onBatchImportEmployees={data.importEmployees}
                 onOpenLeaveModal={openLeaveModal}
                 canDelete={isAdmin}
@@ -333,29 +372,6 @@ export default function App() {
             onAddLeaveRecord={data.addLeaveRecord}
           />
         </Suspense>
-      )}
-
-      {employeeToDelete && (
-        <ConfirmModal
-          isOpen
-          type="danger"
-          title={`Supprimer ${employeeToDelete.name} ?`}
-          subtitle="Cette action est définitive."
-          warningMessage="Tous les congés enregistrés pour cet employé seront également supprimés."
-          confirmLabel="Oui, supprimer"
-          cancelLabel="Annuler"
-          summaryItems={[
-            { label: 'Matricule', value: employeeToDelete.idNumber },
-            { label: 'Nom', value: employeeToDelete.name },
-            { label: 'Poste', value: employeeToDelete.position },
-          ]}
-          onConfirm={() => {
-            const target = employeeToDelete;
-            setEmployeeToDelete(null);
-            void data.deleteEmployee(target);
-          }}
-          onCancel={() => setEmployeeToDelete(null)}
-        />
       )}
 
       <ConfirmModal
