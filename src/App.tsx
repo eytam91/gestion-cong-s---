@@ -12,7 +12,11 @@ import {
   LogOut, 
   User as UserIcon,
   RefreshCw,
-  Globe
+  Globe,
+  Lock,
+  Eye,
+  EyeOff,
+  Shield
 } from 'lucide-react';
 import { Employee, LeaveRecord } from './types';
 import { DashboardOverview } from './components/DashboardOverview';
@@ -22,8 +26,10 @@ import { LeaveLedgerModal } from './components/LeaveLedgerModal';
 import { AuditLogsManager } from './components/AuditLogsManager';
 import { UserManager } from './components/UserManager';
 import { AuthModal } from './components/AuthModal';
+import { PrivacyScreenLock } from './components/PrivacyScreenLock';
 import { registerDeviceConnection, addActivityLog } from './utils/auditLogger';
 import { useAuth } from './context/AuthContext';
+import { useConfidentiality } from './context/ConfidentialityContext';
 import { 
   initializeFirestoreData, 
   fetchEmployees, 
@@ -40,6 +46,7 @@ import {
 
 export default function App() {
   const { user, dbUser, logout, isAdmin } = useAuth();
+  const { isConfidentialMode, toggleConfidentialMode, lockScreenNow } = useConfidentiality();
   const [activeTab, setActiveTab] = useState<'dashboard' | 'employees' | 'ledger' | 'audit' | 'users'>('dashboard');
   
   const [employees, setEmployees] = useState<Employee[]>([]);
@@ -50,6 +57,7 @@ export default function App() {
   // Leave Modal State
   const [isLeaveModalOpen, setIsLeaveModalOpen] = useState(false);
   const [modalInitialEmployeeId, setModalInitialEmployeeId] = useState<string | undefined>(undefined);
+  const [selectedEmployeeIdForView, setSelectedEmployeeIdForView] = useState<string | null>(null);
   const [showAuthModal, setShowAuthModal] = useState(false);
 
   // Register Device on Mount
@@ -88,6 +96,10 @@ export default function App() {
   }, []);
 
   const handleResetDemoData = async () => {
+    if (!isAdmin) {
+      alert("Habilitation insuffisante : Seul un Administrateur RH peut recharger les données démo.");
+      return;
+    }
     if (window.confirm('Recharger le jeu de données démo exemple (Employé X inclus) dans Cloud Firestore ?')) {
       setIsLoading(true);
       try {
@@ -110,7 +122,11 @@ export default function App() {
   };
 
   const handleClearAllData = async () => {
-    if (window.confirm('ATTENTION: Vider complètement tous les employés et congés dans Cloud Firestore ?')) {
+    if (!isAdmin) {
+      alert("Habilitation refusée : Seuls les utilisateurs avec le rôle Administrateur ont le droit de purger la base de données.");
+      return;
+    }
+    if (window.confirm('ATTENTION SÉCURITÉ: Vider complètement tous les employés et congés dans Cloud Firestore ? Cette action est irréversible.')) {
       setIsLoading(true);
       try {
         await clearAllFirestoreData();
@@ -140,11 +156,10 @@ export default function App() {
       addActivityLog({
         action: 'EMPLOYEES_IMPORTED',
         actionLabel: 'Import Multiple Employés',
-        details: `Import CSV: ${importedEmployees.length} employés synchronisés dans Cloud Firestore.`,
+        details: `Import: ${importedEmployees.length} employés synchronisés dans Cloud Firestore.`,
       });
     } catch (err) {
       console.error('Failed to batch import employees:', err);
-      alert("Erreur lors de l'import CSV dans Firestore");
     }
   };
 
@@ -187,22 +202,27 @@ export default function App() {
   };
 
   const handleDeleteEmployee = async (id: string) => {
+    if (!isAdmin) {
+      alert("Habilitation refusée : Seuls les comptes Administrateurs sont autorisés à supprimer définitivement un dossier employé.");
+      return;
+    }
     const empToDelete = employees.find((e) => e.id === id);
-    if (window.confirm(`Confirmer la suppression définitive de ${empToDelete?.name || 'cet employé'} dans Cloud Firestore ?`)) {
-      try {
-        await deleteEmployeeDoc(id);
-        setEmployees((prev) => prev.filter((emp) => emp.id !== id));
-        setLeaveRecords((prev) => prev.filter((r) => r.employeeId !== id));
+    if (!window.confirm(`Confirmer la suppression définitive du dossier de ${empToDelete?.name || id} ?`)) {
+      return;
+    }
+    try {
+      await deleteEmployeeDoc(id);
+      setEmployees((prev) => prev.filter((emp) => emp.id !== id));
+      setLeaveRecords((prev) => prev.filter((r) => r.employeeId !== id));
 
-        addActivityLog({
-          action: 'EMPLOYEE_DELETED',
-          actionLabel: 'Suppression Employé',
-          details: `Suppression de l'employé ${empToDelete?.name || id} dans Cloud Firestore.`,
-          targetId: id,
-        });
-      } catch (err) {
-        console.error('Failed to delete employee:', err);
-      }
+      addActivityLog({
+        action: 'EMPLOYEE_DELETED',
+        actionLabel: 'Suppression Employé',
+        details: `Suppression de l'employé ${empToDelete?.name || id} dans Cloud Firestore.`,
+        targetId: id,
+      });
+    } catch (err) {
+      console.error('Failed to delete employee:', err);
     }
   };
 
@@ -253,11 +273,15 @@ export default function App() {
   };
 
   const handleSelectEmployeeDetail = (empId: string) => {
+    setSelectedEmployeeIdForView(empId);
     setActiveTab('employees');
   };
 
   return (
     <div className="min-h-screen bg-stone-100/70 text-stone-800 flex flex-col justify-between font-sans selection:bg-amber-100 selection:text-amber-900">
+      {/* Session Lock Screen for Confidentiality */}
+      <PrivacyScreenLock />
+
       {/* Header Bar */}
       <header className="border-b border-stone-200/80 bg-white sticky top-0 z-30 shadow-2xs">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between gap-2">
@@ -272,15 +296,49 @@ export default function App() {
                   <Database className="w-3 h-3 text-indigo-600" />
                   Cloud Firestore
                 </span>
-                <span className="hidden md:inline-flex items-center gap-1 text-2xs bg-emerald-50 text-emerald-800 px-2 py-0.5 rounded font-mono">
-                  <Globe className="w-3 h-3 text-emerald-600" />
-                  Multi-Appareils Synchronisés
+                <span className="hidden md:inline-flex items-center gap-1 text-2xs bg-emerald-50 text-emerald-800 px-2 py-0.5 rounded font-mono font-semibold">
+                  <ShieldCheck className="w-3 h-3 text-emerald-600" />
+                  Règles Sécurité Durcies
                 </span>
               </div>
             </div>
           </div>
 
           <div className="flex items-center gap-2 sm:gap-3">
+            {/* Confidentiality Shield Toggle */}
+            <button
+              id="btn-toggle-confidentiality"
+              onClick={toggleConfidentialMode}
+              title={isConfidentialMode ? "Désactiver le masquage automatique des données confidentielles" : "Activer le masque de confidentialité RH (Salaires, Pièces d'identité, INSESO)"}
+              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all border cursor-pointer ${
+                isConfidentialMode
+                  ? 'bg-emerald-50 text-emerald-900 border-emerald-300 hover:bg-emerald-100 shadow-2xs'
+                  : 'bg-amber-50 text-amber-900 border-amber-300 hover:bg-amber-100 ring-1 ring-amber-400/40'
+              }`}
+            >
+              {isConfidentialMode ? (
+                <>
+                  <ShieldCheck className="w-4 h-4 text-emerald-600" />
+                  <span className="hidden sm:inline">Bouclier RH Actif</span>
+                </>
+              ) : (
+                <>
+                  <Eye className="w-4 h-4 text-amber-600" />
+                  <span className="hidden sm:inline text-amber-900">Données en clair</span>
+                </>
+              )}
+            </button>
+
+            {/* Quick Lock Session Button */}
+            <button
+              id="btn-quick-lock-session"
+              onClick={lockScreenNow}
+              title="Verrouiller immédiatement la session RH (Protection Anti-Regard / Départ momentané)"
+              className="p-2 text-stone-600 hover:text-stone-900 hover:bg-stone-100 rounded-xl transition-all cursor-pointer border border-stone-200"
+            >
+              <Lock className="w-4 h-4 text-stone-600" />
+            </button>
+
             {/* Refresh Button */}
             <button
               onClick={loadData}
@@ -452,6 +510,7 @@ export default function App() {
                 onDeleteEmployee={handleDeleteEmployee}
                 onBatchImportEmployees={handleBatchImportEmployees}
                 onOpenLeaveModal={handleOpenLeaveModal}
+                initialSelectedEmployeeId={selectedEmployeeIdForView}
               />
             )}
 

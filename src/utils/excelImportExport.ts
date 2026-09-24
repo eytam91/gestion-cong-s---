@@ -42,7 +42,17 @@ export function normalizeExcelDate(val: any): string {
 
   // If already a Date object (from XLSX cellDates: true)
   if (val instanceof Date && !isNaN(val.getTime())) {
-    return val.toISOString().split('T')[0];
+    // If midnight UTC or near UTC boundary, extract UTC parts
+    if (val.getUTCHours() === 0 && val.getUTCMinutes() === 0) {
+      const y = val.getUTCFullYear();
+      const m = String(val.getUTCMonth() + 1).padStart(2, '0');
+      const d = String(val.getUTCDate()).padStart(2, '0');
+      return `${y}-${m}-${d}`;
+    }
+    const y = val.getFullYear();
+    const m = String(val.getMonth() + 1).padStart(2, '0');
+    const d = String(val.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
   }
 
   // If numeric (Excel serial date number, e.g. 45444)
@@ -59,7 +69,10 @@ export function normalizeExcelDate(val: any): string {
       // Fallback calculation for Excel serial date
       const date = new Date((val - (25567 + 2)) * 86400 * 1000);
       if (!isNaN(date.getTime())) {
-        return date.toISOString().split('T')[0];
+        const y = date.getUTCFullYear();
+        const m = String(date.getUTCMonth() + 1).padStart(2, '0');
+        const d = String(date.getUTCDate()).padStart(2, '0');
+        return `${y}-${m}-${d}`;
       }
     }
   }
@@ -93,8 +106,10 @@ export function normalizeExcelDate(val: any): string {
   const parsed = new Date(str);
   if (!isNaN(parsed.getTime())) {
     const y = parsed.getFullYear();
-    if (y >= 1970 && y <= 2099) {
-      return parsed.toISOString().split('T')[0];
+    if (y >= 1950 && y <= 2100) {
+      const m = String(parsed.getMonth() + 1).padStart(2, '0');
+      const d = String(parsed.getDate()).padStart(2, '0');
+      return `${y}-${m}-${d}`;
     }
   }
 

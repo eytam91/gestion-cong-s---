@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Calculator, ArrowRight, AlertTriangle, CheckCircle2, Calendar, Clock, Sparkles } from 'lucide-react';
 import { Employee, LeaveRecord } from '../types';
-import { calculateEmployeeStats } from '../utils/vacationCalc';
+import { calculateEmployeeStats, formatLocalDate } from '../utils/vacationCalc';
 
 interface VacationSimulatorProps {
   employees: Employee[];
@@ -14,14 +14,29 @@ export const VacationSimulator: React.FC<VacationSimulatorProps> = ({
   leaveRecords,
   onOpenLeaveModal,
 }) => {
-  const [selectedEmpId, setSelectedEmpId] = useState<string>(employees[0]?.id || '');
+  const [selectedEmpId, setSelectedEmpId] = useState<string>('');
   const [simulatedDays, setSimulatedDays] = useState<number>(30); // Par défaut 30 jours comme demandé
 
-  const selectedEmployee = employees.find((e) => e.id === selectedEmpId);
+  // Fallback to first available employee if current selection is invalid
+  const currentEmpId = (selectedEmpId && employees.some(e => e.id === selectedEmpId))
+    ? selectedEmpId
+    : employees[0]?.id || '';
+
+  const selectedEmployee = employees.find((e) => e.id === currentEmpId);
   const stats = selectedEmployee ? calculateEmployeeStats(selectedEmployee, leaveRecords) : null;
 
-  if (!selectedEmployee || !stats) {
-    return null;
+  if (employees.length === 0 || !selectedEmployee || !stats) {
+    return (
+      <div className="bg-white rounded-2xl border border-stone-200/80 shadow-xs p-6 flex flex-col items-center justify-center text-center space-y-3 py-8">
+        <div className="w-12 h-12 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center">
+          <Calculator className="w-6 h-6" />
+        </div>
+        <h4 className="font-bold text-stone-800 text-sm">Simulateur de Congés & Avances</h4>
+        <p className="text-xs text-stone-500 max-w-md">
+          Aucun collaborateur n'est encore enregistré dans la base. Ajoutez un premier employé ou importez un fichier Excel pour simuler l'impact des congés.
+        </p>
+      </div>
+    );
   }
 
   // Solde initial avant demande
@@ -67,7 +82,7 @@ export const VacationSimulator: React.FC<VacationSimulatorProps> = ({
               Sélectionner l'Employé
             </label>
             <select
-              value={selectedEmpId}
+              value={currentEmpId}
               onChange={(e) => setSelectedEmpId(e.target.value)}
               className="w-full px-3.5 py-2.5 rounded-xl border border-stone-200 bg-white text-stone-900 text-xs sm:text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-stone-900/10"
             >
@@ -126,7 +141,7 @@ export const VacationSimulator: React.FC<VacationSimulatorProps> = ({
             </div>
             <div className="flex justify-between">
               <span>Date d'embauche :</span>
-              <span className="font-semibold text-stone-800">{new Date(selectedEmployee.hireDate).toLocaleDateString('fr-FR')}</span>
+              <span className="font-semibold text-stone-800">{formatLocalDate(selectedEmployee.hireDate)}</span>
             </div>
             <div className="flex justify-between">
               <span>Acquisition quotidienne :</span>

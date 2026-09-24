@@ -9,7 +9,8 @@ import {
 } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { Employee, LeaveRecord } from '../types';
-import { SAMPLE_DEMO_EMPLOYEES, SAMPLE_DEMO_LEAVE_RECORDS } from '../utils/vacationCalc';
+import { SAMPLE_DEMO_LEAVE_RECORDS } from '../utils/vacationCalc';
+import { INITIAL_HR_EMPLOYEES } from '../data/hrEmployeesData';
 
 const EMPLOYEES_COLL = 'employees';
 const LEAVE_RECORDS_COLL = 'leave_records';
@@ -51,10 +52,17 @@ export async function initializeFirestoreData(): Promise<{ employees: Employee[]
     }
 
     const empSnap = await getDocs(collection(db, EMPLOYEES_COLL));
-    const employees: Employee[] = [];
+    let employees: Employee[] = [];
     empSnap.forEach((d) => {
       employees.push(d.data() as Employee);
     });
+
+    // If Firestore is completely empty or has no employees, seed the complete 142 HR employee records
+    if (employees.length === 0 && INITIAL_HR_EMPLOYEES.length > 0) {
+      console.log('Seeding full enterprise HR employee records with documents into Firestore...');
+      await batchSaveEmployees(INITIAL_HR_EMPLOYEES);
+      employees = [...INITIAL_HR_EMPLOYEES];
+    }
 
     const leaveSnap = await getDocs(collection(db, LEAVE_RECORDS_COLL));
     const leaveRecords: LeaveRecord[] = [];
@@ -86,25 +94,50 @@ export async function fetchEmployees(): Promise<Employee[]> {
   }
 }
 
+/**
+ * Helper to remove undefined fields recursively so Firestore doesn't throw invalid data errors
+ */
+function cleanForFirestore<T extends Record<string, any>>(obj: T): T {
+  const result: any = {};
+  for (const [key, value] of Object.entries(obj)) {
+    if (value !== undefined) {
+      if (value && typeof value === 'object' && !Array.isArray(value) && !(value instanceof Date)) {
+        result[key] = cleanForFirestore(value);
+      } else {
+        result[key] = value;
+      }
+    }
+  }
+  return result;
+}
+
 export async function saveEmployee(employee: Employee): Promise<Employee> {
   const empRef = doc(db, EMPLOYEES_COLL, employee.id);
-  await setDoc(empRef, employee);
+  const cleaned = cleanForFirestore(employee);
+  await setDoc(empRef, cleaned);
   return employee;
 }
 
 export async function batchSaveEmployees(employees: Employee[]): Promise<number> {
-  const batch = writeBatch(db);
-  for (const emp of employees) {
-    const empRef = doc(db, EMPLOYEES_COLL, emp.id);
-    batch.set(empRef, emp);
+  if (employees.length === 0) return 0;
+  // Firestore limit is 500 writes per batch. We chunk by 400 safely.
+  const BATCH_SIZE = 400;
+  for (let i = 0; i < employees.length; i += BATCH_SIZE) {
+    const chunk = employees.slice(i, i + BATCH_SIZE);
+    const batch = writeBatch(db);
+    for (const emp of chunk) {
+      const empRef = doc(db, EMPLOYEES_COLL, emp.id);
+      batch.set(empRef, cleanForFirestore(emp));
+    }
+    await batch.commit();
   }
-  await batch.commit();
   return employees.length;
 }
 
 export async function updateEmployeeDoc(employee: Employee): Promise<Employee> {
   const empRef = doc(db, EMPLOYEES_COLL, employee.id);
-  await setDoc(empRef, employee, { merge: true });
+  const cleaned = cleanForFirestore(employee);
+  await setDoc(empRef, cleaned, { merge: true });
   return employee;
 }
 
@@ -252,10 +285,10 @@ export async function getOrCreateDbUser(uid: string, email: string, name?: strin
 export async function resetDemoDataToFirestore(): Promise<void> {
   await clearAllFirestoreData();
 
+  // Save the full set of 142 enterprise HR employee records with documents
+  await batchSaveEmployees(INITIAL_HR_EMPLOYEES);
+
   const batch = writeBatch(db);
-  for (const emp of SAMPLE_DEMO_EMPLOYEES) {
-    batch.set(doc(db, EMPLOYEES_COLL, emp.id), emp);
-  }
   for (const rec of SAMPLE_DEMO_LEAVE_RECORDS) {
     batch.set(doc(db, LEAVE_RECORDS_COLL, rec.id), rec);
   }
@@ -270,11 +303,20 @@ export async function clearAllFirestoreData(): Promise<void> {
     const empSnap = await getDocs(collection(db, EMPLOYEES_COLL));
     const leaveSnap = await getDocs(collection(db, LEAVE_RECORDS_COLL));
 
-    const batch = writeBatch(db);
-    empSnap.forEach((d) => batch.delete(doc(db, EMPLOYEES_COLL, d.id)));
-    leaveSnap.forEach((d) => batch.delete(doc(db, LEAVE_RECORDS_COLL, d.id)));
+    const allDocRefs = [
+      ...empSnap.docs.map(d => doc(db, EMPLOYEES_COLL, d.id)),
+      ...leaveSnap.docs.map(d => doc(db, LEAVE_RECORDS_COLL, d.id))
+    ];
 
-    await batch.commit();
+    const BATCH_SIZE = 400;
+    for (let i = 0; i < allDocRefs.length; i += BATCH_SIZE) {
+      const chunk = allDocRefs.slice(i, i + BATCH_SIZE);
+      const batch = writeBatch(db);
+      for (const ref of chunk) {
+        batch.delete(ref);
+      }
+      await batch.commit();
+    }
   } catch (err) {
     console.error('Error clearing data:', err);
   }

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   UserPlus, 
   Users, 
@@ -24,12 +24,16 @@ import {
   Hash,
   Sparkles,
   CheckCircle2,
-  AlertCircle
+  AlertCircle,
+  ShieldCheck,
+  ShieldAlert,
+  FileCheck
 } from 'lucide-react';
-import { Employee, ContractType, EmployeeStatus, LeaveRecord } from '../types';
+import { Employee, ContractType, EmployeeStatus, LeaveRecord, HRComplianceState } from '../types';
 import { calculateEmployeeStats, LEAVE_TYPE_LABELS } from '../utils/vacationCalc';
 import { EmployeeImportModal } from './EmployeeImportModal';
 import { ConfirmModal } from './ConfirmModal';
+import { EmployeeDetailPage } from './EmployeeDetailPage';
 import { exportEmployeesToExcel } from '../utils/excelImportExport';
 
 interface EmployeeManagerProps {
@@ -40,6 +44,7 @@ interface EmployeeManagerProps {
   onDeleteEmployee: (id: string) => void;
   onBatchImportEmployees: (employees: Employee[]) => Promise<void>;
   onOpenLeaveModal: (employeeId: string) => void;
+  initialSelectedEmployeeId?: string | null;
 }
 
 export const EmployeeManager: React.FC<EmployeeManagerProps> = ({
@@ -50,6 +55,7 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({
   onDeleteEmployee,
   onBatchImportEmployees,
   onOpenLeaveModal,
+  initialSelectedEmployeeId,
 }) => {
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
@@ -57,7 +63,24 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<'ALL' | EmployeeStatus>('ALL');
   const [contractFilter, setContractFilter] = useState<'ALL' | ContractType>('ALL');
+  const [complianceFilter, setComplianceFilter] = useState<'ALL' | HRComplianceState>('ALL');
   const [selectedEmployeeDetailId, setSelectedEmployeeDetailId] = useState<string | null>(null);
+  const [toastMessage, setToastMessage] = useState<{ type: 'info' | 'error' | 'success'; text: string } | null>(null);
+
+  // Sync initial selected employee when navigating from Dashboard
+  useEffect(() => {
+    if (initialSelectedEmployeeId) {
+      setSelectedEmployeeDetailId(initialSelectedEmployeeId);
+    }
+  }, [initialSelectedEmployeeId]);
+
+  // Auto-dismiss toast
+  useEffect(() => {
+    if (toastMessage) {
+      const timer = setTimeout(() => setToastMessage(null), 4000);
+      return () => clearTimeout(timer);
+    }
+  }, [toastMessage]);
 
   // Form Fields
   const [idNumber, setIdNumber] = useState('');
@@ -243,19 +266,20 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({
 
   const handleExportEmployeesExcel = () => {
     if (employees.length === 0) {
-      alert("Aucun employé à exporter.");
+      setToastMessage({ type: 'info', text: 'Aucun collaborateur à exporter.' });
       return;
     }
     try {
       exportEmployeesToExcel(employees, leaveRecords);
+      setToastMessage({ type: 'success', text: 'Export Excel généré avec succès.' });
     } catch (err: any) {
-      alert("Erreur lors de l'export Excel : " + (err.message || 'Erreur inconnue'));
+      setToastMessage({ type: 'error', text: "Erreur lors de l'export Excel : " + (err.message || 'Erreur inconnue') });
     }
   };
 
   const handleExportEmployeesCsv = () => {
     if (employees.length === 0) {
-      alert("Aucun employé à exporter.");
+      setToastMessage({ type: 'info', text: 'Aucun collaborateur à exporter.' });
       return;
     }
 
@@ -312,8 +336,10 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({
 
     const matchesStatus = statusFilter === 'ALL' || emp.status === statusFilter;
     const matchesContract = contractFilter === 'ALL' || emp.contractType === contractFilter;
+    const matchesCompliance = complianceFilter === 'ALL' || 
+      (complianceFilter === 'EN_REGLE' ? (emp.overallState === 'EN_REGLE' || !emp.overallState) : emp.overallState === complianceFilter);
 
-    return matchesSearch && matchesStatus && matchesContract;
+    return matchesSearch && matchesStatus && matchesContract && matchesCompliance;
   });
 
   const countLocal = employees.filter(e => e.status === 'LOCAL').length;
@@ -321,9 +347,31 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({
   const countTypeA = employees.filter(e => e.contractType === 'TYPE_A').length;
   const countTypeB = employees.filter(e => e.contractType === 'TYPE_B').length;
 
+  const countEnRegle = employees.filter(e => e.overallState === 'EN_REGLE' || !e.overallState).length;
+  const countARegulariser = employees.filter(e => e.overallState === 'A_REGULARISER').length;
+  const countARenouveler = employees.filter(e => e.overallState === 'A_RENOUVELER').length;
+  const countACompleter = employees.filter(e => e.overallState === 'A_COMPLETER_VERIFIER').length;
+
   const selectedEmployee = employees.find((e) => e.id === selectedEmployeeDetailId);
-  const selectedEmpStats = selectedEmployee ? calculateEmployeeStats(selectedEmployee, leaveRecords) : null;
-  const selectedEmpRecords = selectedEmployee ? leaveRecords.filter((r) => r.employeeId === selectedEmployee.id) : [];
+
+  // When an employee is selected, render their individual, comprehensive and structured page
+  if (selectedEmployee) {
+    return (
+      <EmployeeDetailPage
+        employee={selectedEmployee}
+        leaveRecords={leaveRecords}
+        allEmployees={employees}
+        onBack={() => setSelectedEmployeeDetailId(null)}
+        onUpdateEmployee={onUpdateEmployee}
+        onDeleteEmployee={(id) => {
+          onDeleteEmployee(id);
+          setSelectedEmployeeDetailId(null);
+        }}
+        onOpenLeaveModal={onOpenLeaveModal}
+        onSelectEmployee={(id) => setSelectedEmployeeDetailId(id)}
+      />
+    );
+  }
 
   // Check if form is currently valid in real-time
   const isNameValid = name.trim().length >= 2;
@@ -784,6 +832,27 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({
         />
       )}
 
+      {/* Toast Notification Banner */}
+      {toastMessage && (
+        <div
+          className={`p-3 rounded-xl text-xs font-semibold flex items-center justify-between shadow-xs transition-all ${
+            toastMessage.type === 'error'
+              ? 'bg-rose-50 text-rose-800 border border-rose-200'
+              : toastMessage.type === 'success'
+              ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
+              : 'bg-amber-50 text-amber-800 border border-amber-200'
+          }`}
+        >
+          <span>{toastMessage.text}</span>
+          <button
+            onClick={() => setToastMessage(null)}
+            className="text-stone-400 hover:text-stone-700 ml-2 font-bold cursor-pointer"
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
       {/* Filter and Search Bar */}
       <div className="bg-white p-4 rounded-2xl border border-stone-200/80 shadow-xs space-y-3">
         <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3">
@@ -876,6 +945,67 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({
             </button>
           </div>
 
+          {/* Compliance Filter Buttons */}
+          <div className="flex items-center gap-1.5 flex-wrap pt-2 border-t border-stone-100 w-full">
+            <span className="text-[10px] font-bold text-stone-400 uppercase tracking-wider shrink-0 flex items-center gap-1">
+              <ShieldCheck className="w-3.5 h-3.5 text-stone-500" /> Dossier RH:
+            </span>
+            <button
+              onClick={() => setComplianceFilter('ALL')}
+              className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                complianceFilter === 'ALL'
+                  ? 'bg-stone-900 text-white shadow-2xs'
+                  : 'bg-stone-100 text-stone-600 hover:bg-stone-200'
+              }`}
+            >
+              Tous ({employees.length})
+            </button>
+            <button
+              onClick={() => setComplianceFilter('EN_REGLE')}
+              className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer flex items-center gap-1.5 ${
+                complianceFilter === 'EN_REGLE'
+                  ? 'bg-emerald-700 text-white shadow-2xs'
+                  : 'bg-emerald-50 text-emerald-800 border border-emerald-200 hover:bg-emerald-100'
+              }`}
+            >
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+              En Règle ({countEnRegle})
+            </button>
+            <button
+              onClick={() => setComplianceFilter('A_REGULARISER')}
+              className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer flex items-center gap-1.5 ${
+                complianceFilter === 'A_REGULARISER'
+                  ? 'bg-red-700 text-white shadow-2xs'
+                  : 'bg-red-50 text-red-800 border border-red-200 hover:bg-red-100'
+              }`}
+            >
+              <span className="w-1.5 h-1.5 rounded-full bg-red-500" />
+              À Régulariser ({countARegulariser})
+            </button>
+            <button
+              onClick={() => setComplianceFilter('A_RENOUVELER')}
+              className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer flex items-center gap-1.5 ${
+                complianceFilter === 'A_RENOUVELER'
+                  ? 'bg-amber-600 text-white shadow-2xs'
+                  : 'bg-amber-50 text-amber-800 border border-amber-200 hover:bg-amber-100'
+              }`}
+            >
+              <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+              À Renouveler ({countARenouveler})
+            </button>
+            <button
+              onClick={() => setComplianceFilter('A_COMPLETER_VERIFIER')}
+              className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer flex items-center gap-1.5 ${
+                complianceFilter === 'A_COMPLETER_VERIFIER'
+                  ? 'bg-indigo-700 text-white shadow-2xs'
+                  : 'bg-indigo-50 text-indigo-800 border border-indigo-200 hover:bg-indigo-100'
+              }`}
+            >
+              <span className="w-1.5 h-1.5 rounded-full bg-indigo-500" />
+              À Compléter ({countACompleter})
+            </button>
+          </div>
+
         </div>
       </div>
 
@@ -923,14 +1053,17 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({
             return (
               <div
                 key={emp.id}
-                className="bg-white rounded-2xl border border-stone-200/80 shadow-xs hover:border-stone-300 transition-all p-5 flex flex-col justify-between space-y-4"
+                className="bg-white rounded-2xl border border-stone-200/80 shadow-xs hover:border-amber-300 hover:shadow-md transition-all p-5 flex flex-col justify-between space-y-4 group"
               >
                 <div className="space-y-3">
-                  {/* Top Card Info */}
-                  <div className="flex items-start justify-between gap-2">
+                  {/* Top Card Info (clickable to view employee page) */}
+                  <div 
+                    onClick={() => setSelectedEmployeeDetailId(emp.id)}
+                    className="flex items-start justify-between gap-2 cursor-pointer"
+                  >
                     <div className="flex items-center gap-3">
-                      <div className="relative">
-                        <div className={`w-11 h-11 rounded-xl flex items-center justify-center font-bold text-sm text-white shadow-2xs ${
+                      <div className="relative shrink-0">
+                        <div className={`w-11 h-11 rounded-xl flex items-center justify-center font-bold text-sm text-white shadow-2xs transition-transform group-hover:scale-105 ${
                           emp.status === 'EXPAT' ? 'bg-purple-900' : 'bg-stone-900'
                         }`}>
                           {emp.name.charAt(0)}
@@ -939,11 +1072,13 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({
                           <span className="absolute -top-1 -right-1 w-3.5 h-3.5 rounded-full bg-red-600 border-2 border-white ring-2 ring-red-400/50" title="Solde négatif à régulariser" />
                         )}
                       </div>
-                      <div>
+                      <div className="min-w-0">
                         <div className="flex items-center gap-1.5 flex-wrap">
-                          <h3 className="font-bold text-stone-900 text-base">{emp.name}</h3>
+                          <h3 className="font-bold text-stone-900 text-base hover:text-amber-700 transition-colors truncate">
+                            {emp.name}
+                          </h3>
                         </div>
-                        <p className="text-xs font-medium text-stone-600">{emp.position || 'Collaborateur'}</p>
+                        <p className="text-xs font-medium text-stone-600 truncate">{emp.position || 'Collaborateur'}</p>
                         <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
                           <span className="font-mono text-2xs font-bold px-1.5 py-0.2 rounded bg-stone-100 text-stone-700 border border-stone-200">
                             {emp.idNumber || 'SANS-MAT'}
@@ -989,6 +1124,37 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({
                         </span>
                       )}
                     </div>
+                  </div>
+
+                  {/* HR Compliance & Documents Pill Bar */}
+                  <div className="flex items-center justify-between gap-2 pt-1">
+                    {/* Overall Compliance */}
+                    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-2xs font-bold border ${
+                      (emp.overallState || 'EN_REGLE') === 'EN_REGLE' ? 'bg-emerald-50 text-emerald-800 border-emerald-200' :
+                      emp.overallState === 'A_REGULARISER' ? 'bg-red-50 text-red-800 border-red-200' :
+                      emp.overallState === 'A_RENOUVELER' ? 'bg-amber-50 text-amber-800 border-amber-200' :
+                      'bg-indigo-50 text-indigo-800 border-indigo-200'
+                    }`}>
+                      <span className={`w-1.5 h-1.5 rounded-full ${
+                        (emp.overallState || 'EN_REGLE') === 'EN_REGLE' ? 'bg-emerald-500' :
+                        emp.overallState === 'A_REGULARISER' ? 'bg-red-500' :
+                        emp.overallState === 'A_RENOUVELER' ? 'bg-amber-500' :
+                        'bg-indigo-500'
+                      }`} />
+                      {(emp.overallState || 'EN_REGLE') === 'EN_REGLE' ? 'Dossier en règle' :
+                       emp.overallState === 'A_REGULARISER' ? 'À régulariser' :
+                       emp.overallState === 'A_RENOUVELER' ? 'À renouveler' :
+                       'À compléter'}
+                    </span>
+
+                    {/* Documents Count */}
+                    <button
+                      onClick={() => setSelectedEmployeeDetailId(emp.id)}
+                      className="inline-flex items-center gap-1 text-2xs text-stone-600 hover:text-stone-900 bg-stone-100 hover:bg-stone-200 px-2 py-0.5 rounded-md transition-colors cursor-pointer font-medium"
+                    >
+                      <FileText className="w-3 h-3 text-stone-500" />
+                      <span>{emp.documents?.length || 0} doc(s)</span>
+                    </button>
                   </div>
 
                   {/* Solde Card Status */}
@@ -1039,11 +1205,11 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({
                   <div className="flex items-center gap-1">
                     <button
                       onClick={() => setSelectedEmployeeDetailId(emp.id)}
-                      className="inline-flex items-center gap-1 px-2.5 py-1.5 bg-amber-400 hover:bg-amber-300 text-stone-950 font-bold rounded-lg text-xs transition-all shadow-2xs cursor-pointer active:scale-98"
-                      title="Consulter l'historique détaillé des congés"
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-amber-400 hover:bg-amber-300 text-stone-950 font-bold rounded-lg text-xs transition-all shadow-2xs cursor-pointer active:scale-98"
+                      title="Ouvrir la page individuelle et les documents RH"
                     >
-                      <History className="w-3.5 h-3.5" />
-                      Historique
+                      <FileText className="w-3.5 h-3.5" />
+                      Fiche & Docs
                     </button>
                     <button
                       onClick={() => handleOpenEditForm(emp)}
@@ -1064,137 +1230,6 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({
               </div>
             );
           })}
-        </div>
-      )}
-
-      {/* Employee Detail Modal */}
-      {selectedEmployee && selectedEmpStats && (
-        <div className="fixed inset-0 bg-stone-900/50 backdrop-blur-xs flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-3xl border border-stone-200 shadow-2xl max-w-2xl w-full p-6 space-y-6 max-h-[90vh] overflow-y-auto animate-in fade-in zoom-in-95 duration-150">
-            <div className="flex items-center justify-between border-b border-stone-100 pb-4">
-              <div className="flex items-center gap-3">
-                <div className={`w-12 h-12 rounded-2xl text-white font-bold text-base flex items-center justify-center ${
-                  selectedEmployee.status === 'EXPAT' ? 'bg-purple-900' : 'bg-stone-900'
-                }`}>
-                  {selectedEmployee.name.charAt(0)}
-                </div>
-                <div>
-                  <div className="flex items-center gap-2">
-                    <h3 className="text-xl font-bold text-stone-900">
-                      {selectedEmployee.name}
-                    </h3>
-                    <span className="font-mono text-xs font-bold px-2 py-0.5 rounded bg-stone-100 text-stone-800 border border-stone-200">
-                      {selectedEmployee.idNumber || 'SANS-MAT'}
-                    </span>
-                  </div>
-                  <p className="text-xs text-stone-500 mt-0.5">
-                    {selectedEmployee.position} • {selectedEmployee.status === 'EXPAT' ? 'Expatrié (EXPAT)' : 'Personnel Local (LOCAL)'} • Contrat {selectedEmployee.contractType} (Embauché le {new Date(selectedEmployee.hireDate).toLocaleDateString('fr-FR')})
-                  </p>
-                </div>
-              </div>
-              <button
-                onClick={() => setSelectedEmployeeDetailId(null)}
-                className="text-stone-400 hover:text-stone-700 p-1.5 rounded-full hover:bg-stone-100 cursor-pointer"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            {/* Solde & Stats Grid */}
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-              <div className="bg-stone-50 p-3.5 rounded-2xl border border-stone-200">
-                <p className="text-2xs font-bold text-stone-400 uppercase">Jours Acquis Total</p>
-                <p className="text-lg font-bold text-emerald-700 mt-1 font-mono">+{selectedEmpStats.totalAccruedDays.toFixed(1)} j</p>
-              </div>
-
-              <div className="bg-stone-50 p-3.5 rounded-2xl border border-stone-200">
-                <p className="text-2xs font-bold text-stone-400 uppercase">Congés Payés Pris</p>
-                <p className="text-lg font-bold text-stone-900 mt-1 font-mono">{selectedEmpStats.totalLeaveTakenDays} j</p>
-              </div>
-
-              <div className={`p-3.5 rounded-2xl border ${selectedEmpStats.isDebt ? 'bg-red-50 border-red-200' : 'bg-emerald-50 border-emerald-200'}`}>
-                <p className="text-2xs font-bold uppercase text-stone-500">Solde Actuel (Solde)</p>
-                <p className={`text-lg font-bold mt-1 font-mono ${selectedEmpStats.isDebt ? 'text-red-700' : 'text-emerald-700'}`}>
-                  {selectedEmpStats.isDebt ? `-${selectedEmpStats.debtDays.toFixed(1)} j` : `+${selectedEmpStats.balanceDays.toFixed(1)} j`}
-                </p>
-              </div>
-            </div>
-
-            {/* Indication if employee passed allocated days */}
-            {selectedEmpStats.isDebt && (
-              <div className="bg-red-50 border border-red-200 p-4 rounded-2xl text-xs space-y-1.5">
-                <div className="flex items-center gap-2 font-bold text-red-900">
-                  <AlertTriangle className="w-4 h-4 text-red-600 shrink-0" />
-                  <span>Dépassement des Jours Acquis (+{selectedEmpStats.exceededDays.toFixed(1)} jours en avance)</span>
-                </div>
-                <p className="text-red-800 text-2xs leading-relaxed">
-                  L'employé a consommé {selectedEmpStats.totalLeaveTakenDays} jours de congé payé pour {selectedEmpStats.totalAccruedDays.toFixed(1)} jours accumulés par son travail. Il lui faudra environ <strong>~{selectedEmpStats.daysToPayback} jours de travail</strong> pour régulariser ce solde négatif.
-                </p>
-              </div>
-            )}
-
-            {/* Detail History List */}
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <h4 className="text-sm font-bold text-stone-900 flex items-center gap-2">
-                  <FileText className="w-4 h-4 text-stone-600" />
-                  <span>Historique des Congés & Absences</span>
-                  <span className="text-2xs text-stone-400 font-normal">({selectedEmpRecords.length} enregistrement(s))</span>
-                </h4>
-                <button
-                  onClick={() => {
-                    const empId = selectedEmployee.id;
-                    setSelectedEmployeeDetailId(null);
-                    onOpenLeaveModal(empId);
-                  }}
-                  className="inline-flex items-center gap-1 text-xs font-bold bg-amber-400 hover:bg-amber-300 text-stone-950 px-3 py-1.5 rounded-xl transition-all shadow-2xs cursor-pointer active:scale-98"
-                >
-                  <Plus className="w-3.5 h-3.5" />
-                  Saisir Congé
-                </button>
-              </div>
-
-              {selectedEmpRecords.length === 0 ? (
-                <p className="text-xs text-stone-400 italic py-4 text-center">Aucune absence enregistrée pour cet employé.</p>
-              ) : (
-                <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
-                  {selectedEmpRecords.map((rec) => (
-                    <div key={rec.id} className="p-3 bg-stone-50 rounded-2xl border border-stone-200 text-xs flex justify-between items-center">
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <span className="font-bold text-stone-900">{LEAVE_TYPE_LABELS[rec.leaveType]}</span>
-                          {rec.isPaid === false ? (
-                            <span className="px-1.5 py-0.5 rounded text-3xs font-bold bg-amber-100 text-amber-900 border border-amber-200">
-                              Sans solde
-                            </span>
-                          ) : (
-                            <span className="px-1.5 py-0.5 rounded text-3xs font-bold bg-emerald-100 text-emerald-900 border border-emerald-200">
-                              Payé
-                            </span>
-                          )}
-                        </div>
-                        <p className="text-2xs text-stone-500 mt-0.5">
-                          Du {new Date(rec.startDate).toLocaleDateString('fr-FR')} au {new Date(rec.endDate).toLocaleDateString('fr-FR')} {rec.notes ? `• ${rec.notes}` : ''}
-                        </p>
-                      </div>
-                      <span className="font-bold font-mono text-stone-900 shrink-0">
-                        {rec.daysCount} jours
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            <div className="flex justify-end pt-2 border-t border-stone-100">
-              <button
-                onClick={() => setSelectedEmployeeDetailId(null)}
-                className="px-4 py-2 bg-stone-900 hover:bg-stone-800 text-white rounded-xl text-xs font-semibold cursor-pointer"
-              >
-                Fermer
-              </button>
-            </div>
-          </div>
         </div>
       )}
 

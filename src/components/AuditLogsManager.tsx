@@ -15,10 +15,14 @@ import {
   Database, 
   FileCode, 
   UserCheck, 
-  Server 
+  Server,
+  Lock,
+  Eye,
+  AlertTriangle
 } from 'lucide-react';
 import { ActivityLog, DeviceSession } from '../types';
 import { getActivityLogs, getDeviceSessions, clearAuditLogs, getOrCreateDeviceId } from '../utils/auditLogger';
+import { useAuth } from '../context/AuthContext';
 
 interface AuditLogsManagerProps {
   onResetDemoData: () => void;
@@ -33,6 +37,7 @@ export const AuditLogsManager: React.FC<AuditLogsManagerProps> = ({
   employeeCount,
   leaveRecordCount,
 }) => {
+  const { isAdmin, user } = useAuth();
   const [activeSubTab, setActiveSubTab] = useState<'activity' | 'devices' | 'database'>('activity');
   const [searchTerm, setSearchTerm] = useState('');
   const [actionFilter, setActionFilter] = useState<string>('ALL');
@@ -45,6 +50,7 @@ export const AuditLogsManager: React.FC<AuditLogsManagerProps> = ({
     const matchesSearch = 
       log.actionLabel.toLowerCase().includes(searchTerm.toLowerCase()) ||
       log.details.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (log.actorEmail && log.actorEmail.toLowerCase().includes(searchTerm.toLowerCase())) ||
       log.deviceId.toLowerCase().includes(searchTerm.toLowerCase());
     
     const matchesAction = actionFilter === 'ALL' || log.action === actionFilter;
@@ -57,12 +63,14 @@ export const AuditLogsManager: React.FC<AuditLogsManagerProps> = ({
       return;
     }
 
-    const headers = ["ID Log", "Horodatage", "Action", "Description", "ID Appareil", "Type Appareil"];
+    const headers = ["ID Log", "Horodatage", "Action", "Description", "Opérateur (Email)", "Rôle", "ID Appareil", "Type Appareil"];
     const rows = logs.map((log) => [
       `"${log.id}"`,
       `"${log.timestamp}"`,
       `"${log.actionLabel.replace(/"/g, '""')}"`,
       `"${log.details.replace(/"/g, '""')}"`,
+      `"${log.actorEmail || 'Anonyme'}"`,
+      `"${log.actorRole || 'N/A'}"`,
       `"${log.deviceId}"`,
       `"${log.deviceType}"`
     ].join(';'));
@@ -179,8 +187,16 @@ export const AuditLogsManager: React.FC<AuditLogsManagerProps> = ({
                 <option value="EMPLOYEE_CREATED">Créations d'employés</option>
                 <option value="EMPLOYEE_UPDATED">Modifications d'employés</option>
                 <option value="EMPLOYEE_DELETED">Suppressions d'employés</option>
+                <option value="EMPLOYEES_IMPORTED">Imports groupés d'employés</option>
                 <option value="LEAVE_ADDED">Saisies de congés</option>
                 <option value="LEAVE_DELETED">Annulations de congés</option>
+                <option value="CONFIDENTIAL_MODE_TOGGLED">Mode Confidentialité</option>
+                <option value="CONFIDENTIAL_DATA_REVEALED">Démasquages Données</option>
+                <option value="CONFIDENTIAL_DATA_EXPORTED">Exports Sécurisés</option>
+                <option value="USER_LOGIN">Connexions Utilisateurs</option>
+                <option value="USER_LOGOUT">Déconnexions</option>
+                <option value="ROLE_CHANGED">Changements de Rôle</option>
+                <option value="SECURITY_ALERT">Alertes de Sécurité</option>
                 <option value="DEVICE_CONNECTED">Connexions d'appareils</option>
                 <option value="DATA_RESET">Rechargements Démo</option>
                 <option value="DATA_CLEARED">Nettoyages de la base</option>
@@ -214,6 +230,19 @@ export const AuditLogsManager: React.FC<AuditLogsManagerProps> = ({
                             {isCurrentDevice && (
                               <span className="text-3xs bg-emerald-100 text-emerald-800 font-bold px-1.5 py-0.5 rounded">
                                 Cet Appareil
+                              </span>
+                            )}
+                            {log.actorEmail && (
+                              <span className="inline-flex items-center gap-1 text-3xs font-medium px-2 py-0.5 rounded-md bg-stone-100 text-stone-700 border border-stone-200">
+                                <UserCheck className="w-3 h-3 text-stone-500" />
+                                <span>{log.actorEmail}</span>
+                                {log.actorRole && (
+                                  <span className={`text-[9px] uppercase font-bold px-1 py-0.5 rounded ${
+                                    log.actorRole === 'ADMIN' ? 'bg-amber-100 text-amber-800' : 'bg-blue-100 text-blue-800'
+                                  }`}>
+                                    {log.actorRole}
+                                  </span>
+                                )}
                               </span>
                             )}
                           </div>
@@ -323,15 +352,54 @@ export const AuditLogsManager: React.FC<AuditLogsManagerProps> = ({
             <div className="border-t border-stone-100 pt-4 space-y-3">
               <h4 className="text-xs font-bold text-stone-700 uppercase tracking-wider">Actions de Base</h4>
 
-              <div className="space-y-2">
-                <button
-                  onClick={onClearAllData}
-                  className="w-full inline-flex items-center justify-center gap-2 bg-red-50 hover:bg-red-100 text-red-700 text-xs font-bold px-4 py-2.5 rounded-xl transition-all border border-red-200 cursor-pointer"
-                >
-                  <Trash2 className="w-4 h-4 text-red-600" />
-                  Vider la Base (Effacer tous les enregistrements)
-                </button>
-              </div>
+              {isAdmin ? (
+                <div className="space-y-2">
+                  <button
+                    onClick={onResetDemoData}
+                    className="w-full inline-flex items-center justify-center gap-2 bg-stone-100 hover:bg-stone-200 text-stone-800 text-xs font-bold px-4 py-2.5 rounded-xl transition-all border border-stone-300 cursor-pointer"
+                  >
+                    <RefreshCw className="w-4 h-4 text-amber-600" />
+                    Recharger les Données de Démonstration (7 Employés)
+                  </button>
+
+                  <button
+                    onClick={onClearAllData}
+                    className="w-full inline-flex items-center justify-center gap-2 bg-red-50 hover:bg-red-100 text-red-700 text-xs font-bold px-4 py-2.5 rounded-xl transition-all border border-red-200 cursor-pointer"
+                  >
+                    <Trash2 className="w-4 h-4 text-red-600" />
+                    Vider la Base (Effacer tous les enregistrements)
+                  </button>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  <div className="p-3 bg-amber-50 rounded-xl border border-amber-200 text-amber-900 text-xs flex items-start gap-2.5">
+                    <Lock className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                    <div>
+                      <span className="font-bold">Accès Restreint</span>
+                      <p className="text-amber-700 mt-0.5">
+                        Seuls les administrateurs connectés peuvent réinitialiser ou purger la base de données Firestore.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="space-y-2 opacity-50">
+                    <button
+                      disabled
+                      className="w-full inline-flex items-center justify-center gap-2 bg-stone-100 text-stone-400 text-xs font-bold px-4 py-2.5 rounded-xl border border-stone-200 cursor-not-allowed"
+                    >
+                      <RefreshCw className="w-4 h-4" />
+                      Recharger les Données de Démonstration
+                    </button>
+                    <button
+                      disabled
+                      className="w-full inline-flex items-center justify-center gap-2 bg-stone-100 text-stone-400 text-xs font-bold px-4 py-2.5 rounded-xl border border-stone-200 cursor-not-allowed"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                      Vider la Base (Réservé Admin)
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 

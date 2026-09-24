@@ -1,8 +1,11 @@
 import { ActivityLog, DeviceSession } from '../types';
+import { doc, setDoc, getDocs, collection } from 'firebase/firestore';
+import { db } from '../lib/firebase';
 
 const DEVICE_ID_KEY = 'app_device_id_v1';
 const DEVICE_SESSIONS_KEY = 'app_device_sessions_v1';
 const ACTIVITY_LOGS_KEY = 'app_activity_logs_v1';
+const AUDIT_LOGS_COLL = 'audit_logs';
 
 // Generate or retrieve persistent device unique identifier
 export function getOrCreateDeviceId(): string {
@@ -109,8 +112,31 @@ export function addActivityLog(logData: {
   actionLabel: string;
   details: string;
   targetId?: string;
+  actorUid?: string;
+  actorName?: string;
+  actorRole?: string;
 }): ActivityLog {
   const info = getDeviceDetails();
+  
+  // Read current active user context if available
+  let actorUid = logData.actorUid;
+  let actorName = logData.actorName;
+  let actorRole = logData.actorRole;
+
+  if (!actorName || !actorRole) {
+    try {
+      const savedUser = localStorage.getItem('local_db_user');
+      if (savedUser) {
+        const u = JSON.parse(savedUser);
+        actorUid = actorUid || u.uid;
+        actorName = actorName || u.name || u.email;
+        actorRole = actorRole || u.role;
+      }
+    } catch (e) {
+      // ignore
+    }
+  }
+
   const newLog: ActivityLog = {
     id: 'log-' + Date.now() + '-' + Math.random().toString(36).substring(2, 6),
     timestamp: new Date().toISOString(),
@@ -120,12 +146,51 @@ export function addActivityLog(logData: {
     targetId: logData.targetId,
     deviceId: info.deviceId,
     deviceType: info.deviceType,
+    actorUid: actorUid || 'system',
+    actorName: actorName || 'Utilisateur RH',
+    actorRole: actorRole || 'Collaborateur',
   };
 
   const currentLogs = getActivityLogs();
   const updated = [newLog, ...currentLogs].slice(0, 500); // keep max 500 logs
   localStorage.setItem(ACTIVITY_LOGS_KEY, JSON.stringify(updated));
+
+  // Asynchronously persist to Cloud Firestore
+  try {
+    const logRef = doc(db, AUDIT_LOGS_COLL, newLog.id);
+    setDoc(logRef, newLog).catch((err) => {
+      console.warn('Asynchronous Cloud Firestore audit logging failed:', err);
+    });
+  } catch (err) {
+    console.warn('Could not dispatch Firestore audit log:', err);
+  }
+
   return newLog;
+}
+
+export async function fetchCloudAuditLogs(): Promise<ActivityLog[]> {
+  try {
+    const snap = await getDocs(collection(db, AUDIT_LOGS_COLL));
+    const remoteLogs: ActivityLog[] = [];
+    snap.forEach((d) => remoteLogs.push(d.data() as ActivityLog));
+    
+    // Merge with local logs to ensure no logs are lost
+    const localLogs = getActivityLogs();
+    const map = new Map<string, ActivityLog>();
+    
+    localLogs.forEach((l) => map.set(l.id, l));
+    remoteLogs.forEach((l) => map.set(l.id, l));
+    
+    const combined = Array.from(map.values()).sort((a, b) => 
+      (b.timestamp || '').localeCompare(a.timestamp || '')
+    );
+
+    localStorage.setItem(ACTIVITY_LOGS_KEY, JSON.stringify(combined.slice(0, 500)));
+    return combined;
+  } catch (err) {
+    console.warn('Could not fetch remote audit logs, using local cache:', err);
+    return getActivityLogs();
+  }
 }
 
 export function clearAuditLogs(): void {

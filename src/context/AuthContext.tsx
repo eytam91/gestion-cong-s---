@@ -7,6 +7,7 @@ import {
 } from 'firebase/auth';
 import { auth, googleAuthProvider } from '../lib/firebase';
 import { getOrCreateDbUser, DbUser, DEFAULT_USERS, fetchUsers, saveUserDoc } from '../services/firestoreService';
+import { addActivityLog } from '../utils/auditLogger';
 
 interface AuthContextType {
   user: FirebaseUser | { displayName?: string; email?: string; uid?: string } | null;
@@ -14,6 +15,7 @@ interface AuthContextType {
   idToken: string | null;
   loading: boolean;
   isAdmin: boolean;
+  isAuthenticated: boolean;
   signInWithGoogle: () => Promise<void>;
   signInWithEmail: (emailOrUsername: string, pass: string) => Promise<void>;
   registerNewAccount: (username: string, fullName: string, role: 'ADMIN' | 'HR Manager', password?: string) => Promise<void>;
@@ -27,7 +29,8 @@ const AuthContext = createContext<AuthContextType>({
   dbUser: null,
   idToken: null,
   loading: true,
-  isAdmin: true, // Default to admin for full UX access
+  isAdmin: false,
+  isAuthenticated: false,
   signInWithGoogle: async () => {},
   signInWithEmail: async () => {},
   registerNewAccount: async () => {},
@@ -185,8 +188,22 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setDbUser(matched);
       setUser({ displayName: matched.name, email: matched.email, uid: matched.uid });
       localStorage.setItem('local_db_user', JSON.stringify(matched));
+
+      addActivityLog({
+        action: 'USER_LOGIN',
+        actionLabel: 'Connexion Utilisateur Réussie',
+        details: `Utilisateur authentifié : ${matched.name} (${matched.role})`,
+        actorUid: matched.uid,
+        actorName: matched.name,
+        actorRole: matched.role,
+      });
     } catch (error) {
       console.error('Sign-in failed:', error);
+      addActivityLog({
+        action: 'SECURITY_ALERT',
+        actionLabel: 'Tentative de Connexion Échouée',
+        details: `Échec d'authentification pour l'identifiant : ${emailOrUsername}`,
+      });
       throw error;
     }
   };
@@ -209,15 +226,36 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setDbUser(newUser);
     setUser({ displayName: newUser.name, email: newUser.email, uid: newUser.uid });
     localStorage.setItem('local_db_user', JSON.stringify(newUser));
+
+    addActivityLog({
+      action: 'ROLE_CHANGED',
+      actionLabel: 'Création de Compte RH',
+      details: `Nouveau compte créé : ${newUser.name} avec le rôle ${newUser.role}`,
+      actorUid: newUser.uid,
+      actorName: newUser.name,
+      actorRole: newUser.role,
+    });
   };
 
   const logout = async () => {
+    const previousUser = dbUser;
     try {
       localStorage.removeItem('local_db_user');
       await signOut(auth);
       setDbUser(null);
       setUser(null);
       setIdToken(null);
+
+      if (previousUser) {
+        addActivityLog({
+          action: 'USER_LOGOUT',
+          actionLabel: 'Déconnexion Utilisateur',
+          details: `Fin de session sécurisée pour ${previousUser.name} (${previousUser.role})`,
+          actorUid: previousUser.uid,
+          actorName: previousUser.name,
+          actorRole: previousUser.role,
+        });
+      }
     } catch (error) {
       console.error('Sign-out failed:', error);
       setDbUser(null);
@@ -235,8 +273,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return null;
   };
 
-  // By default, if not logged in or role is ADMIN, give full features
-  const isAdmin = !dbUser || dbUser.role === 'ADMIN';
+  // Strictly check that user is logged in AND assigned ADMIN role
+  const isAuthenticated = Boolean(user && dbUser);
+  const isAdmin = Boolean(dbUser && dbUser.role === 'ADMIN');
 
   return (
     <AuthContext.Provider
@@ -246,6 +285,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         idToken,
         loading,
         isAdmin,
+        isAuthenticated,
         signInWithGoogle,
         signInWithEmail,
         registerNewAccount,

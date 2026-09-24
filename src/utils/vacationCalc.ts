@@ -29,6 +29,47 @@ export const LEAVE_TYPE_COLORS: Record<LeaveType, { bg: string; text: string; bo
 };
 
 /**
+ * Safely parses an ISO date string (YYYY-MM-DD or YYYY-MM-DDTHH:mm:ss) into UTC midnight timestamp
+ * eliminating browser local timezone offsets and DST anomalies.
+ */
+export function parseDateToMidnightUtc(dateStr: string): number {
+  if (!dateStr) return 0;
+  const clean = dateStr.split('T')[0].trim();
+  const parts = clean.split('-');
+  if (parts.length === 3) {
+    const y = parseInt(parts[0], 10);
+    const m = parseInt(parts[1], 10) - 1;
+    const d = parseInt(parts[2], 10);
+    if (!isNaN(y) && !isNaN(m) && !isNaN(d)) {
+      return Date.UTC(y, m, d);
+    }
+  }
+  const fallback = new Date(dateStr).getTime();
+  return isNaN(fallback) ? 0 : fallback;
+}
+
+/**
+ * Formats an ISO date string (YYYY-MM-DD) into locale-specific display format (fr-FR by default)
+ * without suffering from UTC-to-local timezone day shift.
+ */
+export function formatLocalDate(dateStr: string, locale: string = 'fr-FR'): string {
+  if (!dateStr) return '';
+  const clean = dateStr.split('T')[0].trim();
+  const parts = clean.split('-');
+  if (parts.length === 3) {
+    const y = parseInt(parts[0], 10);
+    const m = parseInt(parts[1], 10) - 1;
+    const d = parseInt(parts[2], 10);
+    if (!isNaN(y) && !isNaN(m) && !isNaN(d)) {
+      const dateObj = new Date(y, m, d);
+      return dateObj.toLocaleDateString(locale);
+    }
+  }
+  const dateObj = new Date(dateStr);
+  return isNaN(dateObj.getTime()) ? dateStr : dateObj.toLocaleDateString(locale);
+}
+
+/**
  * Calcule toutes les métriques du solde de congés, solde négatif et régularisation d'un employé.
  */
 export function calculateEmployeeStats(
@@ -36,11 +77,11 @@ export function calculateEmployeeStats(
   leaveRecords: LeaveRecord[],
   currentDateStr: string = new Date().toISOString().split('T')[0]
 ): EmployeeStats {
-  const hireDate = new Date(employee.hireDate);
-  const now = new Date(currentDateStr);
+  const hireTime = parseDateToMidnightUtc(employee.hireDate);
+  const nowTime = parseDateToMidnightUtc(currentDateStr);
   
-  // Calcul du nombre de jours écoulés depuis l'embauche
-  const diffTime = Math.max(0, now.getTime() - hireDate.getTime());
+  // Calcul du nombre exact de jours calendaires écoulés depuis l'embauche
+  const diffTime = Math.max(0, nowTime - hireTime);
   const daysSinceHire = Math.floor(diffTime / (1000 * 60 * 60 * 24));
 
   const dailyAccrualRate =

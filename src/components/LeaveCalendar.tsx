@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
-import { ChevronLeft, ChevronRight, Calendar as CalendarIcon, User } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Calendar as CalendarIcon } from 'lucide-react';
 import { Employee, LeaveRecord } from '../types';
-import { LEAVE_TYPE_LABELS } from '../utils/vacationCalc';
+import { LEAVE_TYPE_LABELS, LEAVE_TYPE_COLORS, formatLocalDate } from '../utils/vacationCalc';
 
 interface LeaveCalendarProps {
   employees: Employee[];
@@ -65,18 +65,15 @@ export const LeaveCalendar: React.FC<LeaveCalendarProps> = ({ employees, leaveRe
     return days;
   }, [currentDate]);
 
-  // Check if a date is within a leave record
+  // Check if a date is within a leave record using string comparison to avoid UTC timezone off-by-one errors
   const isDateInLeave = (date: Date, record: LeaveRecord) => {
-    const recordStart = new Date(record.startDate);
-    recordStart.setHours(0, 0, 0, 0);
-    
-    const recordEnd = new Date(record.endDate);
-    recordEnd.setHours(23, 59, 59, 999);
-    
-    const checkDate = new Date(date);
-    checkDate.setHours(12, 0, 0, 0); // midday for safe comparison
-    
-    return checkDate >= recordStart && checkDate <= recordEnd;
+    const y = date.getFullYear();
+    const m = String(date.getMonth() + 1).padStart(2, '0');
+    const d = String(date.getDate()).padStart(2, '0');
+    const checkStr = `${y}-${m}-${d}`;
+    const startStr = record.startDate.split('T')[0];
+    const endStr = record.endDate.split('T')[0];
+    return checkStr >= startStr && checkStr <= endStr;
   };
 
   // Get leaves for a specific date
@@ -89,7 +86,7 @@ export const LeaveCalendar: React.FC<LeaveCalendarProps> = ({ employees, leaveRe
         record,
         employee,
       };
-    }).filter(item => item.employee); // Only return if employee exists
+    }).filter((item): item is { record: LeaveRecord; employee: Employee } => Boolean(item.employee));
   };
 
   const weekDays = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
@@ -179,33 +176,41 @@ export const LeaveCalendar: React.FC<LeaveCalendarProps> = ({ employees, leaveRe
                 </div>
                 
                 <div className="flex-1 overflow-y-auto space-y-1 pr-1 custom-scrollbar">
-                  {leaves.map((leave, j) => (
-                    <div 
-                      key={j} 
-                      className={`text-[9px] sm:text-[10px] font-semibold leading-tight px-1.5 py-1 rounded border shadow-sm truncate ${
-                        leave.record.leaveType === 'CONGE_PAYE' ? 'bg-emerald-50 text-emerald-700 border-emerald-100' :
-                        leave.record.leaveType === 'MALADIE_JUSTIFIEE' ? 'bg-amber-50 text-amber-700 border-amber-100' :
-                        leave.record.leaveType === 'ABSENCE_NON_JUSTIFIEE' ? 'bg-red-50 text-red-700 border-red-100' :
-                        'bg-blue-50 text-blue-700 border-blue-100'
-                      }`}
-                      title={`${leave.employee?.name} - ${LEAVE_TYPE_LABELS[leave.record.leaveType]}`}
-                    >
-                      {leave.employee?.name.split(' ')[0]}
-                    </div>
-                  ))}
+                  {leaves.map((leave, j) => {
+                    const colorScheme = LEAVE_TYPE_COLORS[leave.record.leaveType] || {
+                      bg: 'bg-stone-100',
+                      text: 'text-stone-700',
+                      border: 'border-stone-200',
+                    };
+
+                    return (
+                      <div 
+                        key={j} 
+                        className={`text-[9px] sm:text-[10px] font-semibold leading-tight px-1.5 py-1 rounded border shadow-xs truncate ${colorScheme.bg} ${colorScheme.text} ${colorScheme.border}`}
+                        title={`${leave.employee.name} (${leave.employee.idNumber}) - ${LEAVE_TYPE_LABELS[leave.record.leaveType] || leave.record.leaveType} (${formatLocalDate(leave.record.startDate)} au ${formatLocalDate(leave.record.endDate)})`}
+                      >
+                        {leave.employee.name.split(' ')[0]}
+                      </div>
+                    );
+                  })}
                 </div>
                 
                 {/* Tooltip for desktop if many leaves */}
                 {leaves.length > 0 && (
-                  <div className="absolute top-full left-1/2 -translate-x-1/2 z-20 mt-2 w-48 bg-stone-900 text-white p-3 rounded-xl shadow-xl opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none hidden sm:block">
+                  <div className="absolute top-full left-1/2 -translate-x-1/2 z-20 mt-2 w-52 bg-stone-900 text-white p-3 rounded-xl shadow-xl opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none hidden sm:block">
                     <p className="text-xs font-bold text-stone-400 mb-2 border-b border-stone-700 pb-1">
                       {dayObj.date.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' })}
                     </p>
                     <div className="space-y-2">
                       {leaves.map((leave, j) => (
                         <div key={j} className="flex flex-col gap-0.5">
-                          <span className="text-sm font-semibold">{leave.employee?.name}</span>
-                          <span className="text-[10px] text-stone-400">{LEAVE_TYPE_LABELS[leave.record.leaveType]}</span>
+                          <div className="flex items-center justify-between gap-1">
+                            <span className="text-sm font-semibold truncate">{leave.employee.name}</span>
+                            <span className="text-[9px] font-mono text-amber-400">{leave.employee.idNumber}</span>
+                          </div>
+                          <span className="text-[10px] text-stone-400">
+                            {LEAVE_TYPE_LABELS[leave.record.leaveType] || leave.record.leaveType} ({leave.record.daysCount}j)
+                          </span>
                         </div>
                       ))}
                     </div>

@@ -2,41 +2,63 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     
+    // Validate Document IDs to prevent injection and oversized keys
     function isValidId(id) {
       return id is string && id.size() > 0 && id.size() <= 128;
     }
 
-    // Default Deny Catch-All
+    // Default Deny All Documents
     match /{document=**} {
       allow read, write: if false;
     }
     
-    // Users Collection (Admin / HR accounts)
-    match /users/{userId} {
-      allow read: if true;
-      allow create, update: if isValidId(userId);
-      allow delete: if true;
-    }
-    
-    // Employees Collection
-    match /employees/{employeeId} {
-      allow read: if true;
-      allow create, update: if isValidId(employeeId);
-      allow delete: if true;
-    }
-    
-    // Leave Records Collection
-    match /leave_records/{leaveId} {
-      allow read: if true;
-      allow create, update: if isValidId(leaveId);
-      allow delete: if true;
-    }
-    
-    // Audit Logs Collection
+    // ----------------------------------------------------
+    // Audit Logs Collection: Tamper-Proof & Append-Only
+    // Immutable security log: updates and deletions are strictly forbidden!
+    // ----------------------------------------------------
     match /audit_logs/{logId} {
       allow read: if true;
-      allow create, update: if isValidId(logId);
-      allow delete: if true;
+      allow create: if isValidId(logId) 
+        && request.resource.data.id is string
+        && request.resource.data.timestamp is string
+        && request.resource.data.action is string;
+      allow update, delete: if false; // STRICT IMMUTABILITY
+    }
+    
+    // ----------------------------------------------------
+    // Users Collection (HR Personnel & Admins)
+    // ----------------------------------------------------
+    match /users/{userId} {
+      allow read: if true;
+      allow create, update: if isValidId(userId)
+        && request.resource.data.email is string
+        && request.resource.data.role in ['ADMIN', 'HR Manager'];
+      allow delete: if isValidId(userId);
+    }
+    
+    // ----------------------------------------------------
+    // Employees Master Collection
+    // ----------------------------------------------------
+    match /employees/{employeeId} {
+      allow read: if true;
+      allow create, update: if isValidId(employeeId)
+        && request.resource.data.id is string
+        && request.resource.data.name is string
+        && request.resource.data.name.size() >= 2
+        && request.resource.data.name.size() <= 200;
+      allow delete: if isValidId(employeeId);
+    }
+    
+    // ----------------------------------------------------
+    // Leave Records Collection
+    // ----------------------------------------------------
+    match /leave_records/{leaveId} {
+      allow read: if true;
+      allow create, update: if isValidId(leaveId)
+        && request.resource.data.id is string
+        && request.resource.data.employeeId is string
+        && request.resource.data.daysCount is number;
+      allow delete: if isValidId(leaveId);
     }
   }
 }
