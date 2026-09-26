@@ -32,9 +32,12 @@ export const LEAVE_TYPE_COLORS: Record<LeaveType, { bg: string; text: string; bo
  * Safely parses an ISO date string (YYYY-MM-DD or YYYY-MM-DDTHH:mm:ss) into UTC midnight timestamp
  * eliminating browser local timezone offsets and DST anomalies.
  */
-export function parseDateToMidnightUtc(dateStr: string): number {
-  if (!dateStr) return 0;
-  const clean = dateStr.split('T')[0].trim();
+export function parseDateToMidnightUtc(dateVal: string | Date): number {
+  if (!dateVal) return 0;
+  if (dateVal instanceof Date) {
+    return Date.UTC(dateVal.getUTCFullYear(), dateVal.getUTCMonth(), dateVal.getUTCDate());
+  }
+  const clean = String(dateVal).split('T')[0].trim();
   const parts = clean.split('-');
   if (parts.length === 3) {
     const y = parseInt(parts[0], 10);
@@ -44,7 +47,7 @@ export function parseDateToMidnightUtc(dateStr: string): number {
       return Date.UTC(y, m, d);
     }
   }
-  const fallback = new Date(dateStr).getTime();
+  const fallback = new Date(dateVal).getTime();
   return isNaN(fallback) ? 0 : fallback;
 }
 
@@ -75,10 +78,10 @@ export function formatLocalDate(dateStr: string, locale: string = 'fr-FR'): stri
 export function calculateEmployeeStats(
   employee: Employee,
   leaveRecords: LeaveRecord[],
-  currentDateStr: string = new Date().toISOString().split('T')[0]
+  currentDateInput: string | Date = new Date().toISOString().split('T')[0]
 ): EmployeeStats {
   const hireTime = parseDateToMidnightUtc(employee.hireDate);
-  const nowTime = parseDateToMidnightUtc(currentDateStr);
+  const nowTime = parseDateToMidnightUtc(currentDateInput);
   
   // Calcul du nombre exact de jours calendaires écoulés depuis l'embauche
   const diffTime = Math.max(0, nowTime - hireTime);

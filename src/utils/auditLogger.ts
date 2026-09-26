@@ -1,10 +1,11 @@
-import { ActivityLog, DeviceSession } from '../types';
-import { doc, setDoc, getDocs, collection } from 'firebase/firestore';
+import { ActivityLog, DeviceSession, AuditActor, UserRole } from '../types';
+import { doc, setDoc, getDocs, collection, query, orderBy, limit } from 'firebase/firestore';
 import { db } from '../lib/firebase';
+
+export { type AuditActor };
 
 const DEVICE_ID_KEY = 'app_device_id_v1';
 const DEVICE_SESSIONS_KEY = 'app_device_sessions_v1';
-const ACTIVITY_LOGS_KEY = 'app_activity_logs_v1';
 const AUDIT_LOGS_COLL = 'audit_logs';
 
 // Generate or retrieve persistent device unique identifier
@@ -20,20 +21,24 @@ export function getOrCreateDeviceId(): string {
 // Get device information from browser APIs
 export function getDeviceDetails(): Omit<DeviceSession, 'firstConnectedAt' | 'lastActiveAt'> {
   const deviceId = getOrCreateDeviceId();
-  const ua = navigator.userAgent || '';
+  const ua = typeof navigator !== 'undefined' ? navigator.userAgent || '' : '';
   
   let deviceType: 'Desktop' | 'Mobile' | 'Tablet' = 'Desktop';
   if (/iPad|tablet|PlayBook|Silk/i.test(ua)) {
     deviceType = 'Tablet';
   } else if (/Mobile|Android|iP(hone|od)|IEMobile|BlackBerry|Kindle|NetFront|Silk-Accelerated/i.test(ua)) {
     deviceType = 'Mobile';
-  } else if (window.innerWidth < 768) {
+  } else if (typeof window !== 'undefined' && window.innerWidth < 768) {
     deviceType = 'Mobile';
   }
 
-  const screenResolution = `${window.screen?.width || window.innerWidth}x${window.screen?.height || window.innerHeight}`;
-  const platform = navigator.platform || (navigator as any).userAgentData?.platform || 'Navigateur Web';
-  const language = navigator.language || 'fr-FR';
+  const screenResolution = typeof window !== 'undefined'
+    ? `${window.screen?.width || window.innerWidth}x${window.screen?.height || window.innerHeight}`
+    : '1920x1080';
+  const platform = typeof navigator !== 'undefined'
+    ? (navigator.platform || (navigator as any).userAgentData?.platform || 'Navigateur Web')
+    : 'Navigateur Web';
+  const language = typeof navigator !== 'undefined' ? (navigator.language || 'fr-FR') : 'fr-FR';
 
   return {
     deviceId,
@@ -76,10 +81,10 @@ export function registerDeviceConnection(): DeviceSession {
     };
     sessions.unshift(updatedSession);
     
-    // Log initial device connection event
+    // Non-blocking log initial device connection event
     addActivityLog({
       action: 'DEVICE_CONNECTED',
-      actionLabel: 'Nouveau Connexion Appareil',
+      actionLabel: 'Nouvelle Connexion Appareil',
       details: `Appareil ${info.deviceType} (${info.platform}) avec la résolution ${info.screenResolution}`,
     });
   }
@@ -97,45 +102,50 @@ export function getDeviceSessions(): DeviceSession[] {
   }
 }
 
-// Activity Logging Functions
-export function getActivityLogs(): ActivityLog[] {
-  try {
-    const raw = localStorage.getItem(ACTIVITY_LOGS_KEY);
-    return raw ? JSON.parse(raw) : [];
-  } catch (e) {
-    return [];
-  }
-}
-
+/**
+ * Asynchronously persists an audit log to Firestore (non-blocking, non-fatal).
+ * Any Firestore write error is caught and warned without breaking user flow.
+ */
 export function addActivityLog(logData: {
   action: ActivityLog['action'];
   actionLabel: string;
   details: string;
   targetId?: string;
+  actor?: AuditActor;
   actorUid?: string;
   actorName?: string;
-  actorRole?: string;
+  actorEmail?: string;
+  actorRole?: UserRole | string;
 }): ActivityLog {
   const info = getDeviceDetails();
   
-  // Read current active user context if available
-  let actorUid = logData.actorUid;
-  let actorName = logData.actorName;
-  let actorRole = logData.actorRole;
+  // Extract or build actor info
+  let actorUid = logData.actor?.uid || logData.actorUid;
+  let actorName = logData.actor?.name || logData.actorName;
+  let actorEmail = logData.actor?.email || logData.actorEmail;
+  let actorRole = logData.actor?.role || logData.actorRole;
 
-  if (!actorName || !actorRole) {
+  if (!actorName) {
     try {
       const savedUser = localStorage.getItem('local_db_user');
       if (savedUser) {
         const u = JSON.parse(savedUser);
         actorUid = actorUid || u.uid;
         actorName = actorName || u.name || u.email;
+        actorEmail = actorEmail || u.email;
         actorRole = actorRole || u.role;
       }
-    } catch (e) {
+    } catch {
       // ignore
     }
   }
+
+  const actor: AuditActor = {
+    uid: actorUid || 'system',
+    name: actorName || 'Utilisateur RH',
+    email: actorEmail,
+    role: (actorRole as UserRole) || 'HR Manager',
+  };
 
   const newLog: ActivityLog = {
     id: 'log-' + Date.now() + '-' + Math.random().toString(36).substring(2, 6),
@@ -146,53 +156,50 @@ export function addActivityLog(logData: {
     targetId: logData.targetId,
     deviceId: info.deviceId,
     deviceType: info.deviceType,
-    actorUid: actorUid || 'system',
-    actorName: actorName || 'Utilisateur RH',
-    actorRole: actorRole || 'Collaborateur',
+    actor,
+    actorUid: actor.uid,
+    actorName: actor.name,
+    actorEmail: actor.email,
+    actorRole: actor.role,
   };
 
-  const currentLogs = getActivityLogs();
-  const updated = [newLog, ...currentLogs].slice(0, 500); // keep max 500 logs
-  localStorage.setItem(ACTIVITY_LOGS_KEY, JSON.stringify(updated));
-
-  // Asynchronously persist to Cloud Firestore
+  // Asynchronously dispatch to Firestore without blocking user interaction
   try {
     const logRef = doc(db, AUDIT_LOGS_COLL, newLog.id);
     setDoc(logRef, newLog).catch((err) => {
-      console.warn('Asynchronous Cloud Firestore audit logging failed:', err);
+      // Non-fatal logging failure
+      console.warn('Audit log write to Firestore failed (non-fatal):', err);
     });
   } catch (err) {
-    console.warn('Could not dispatch Firestore audit log:', err);
+    console.warn('Could not dispatch Firestore audit log (non-fatal):', err);
   }
 
   return newLog;
 }
 
-export async function fetchCloudAuditLogs(): Promise<ActivityLog[]> {
+/**
+ * Retrieves audit logs from Cloud Firestore `audit_logs` collection.
+ */
+export async function fetchActivityLogs(maxCount: number = 200): Promise<ActivityLog[]> {
   try {
-    const snap = await getDocs(collection(db, AUDIT_LOGS_COLL));
-    const remoteLogs: ActivityLog[] = [];
-    snap.forEach((d) => remoteLogs.push(d.data() as ActivityLog));
-    
-    // Merge with local logs to ensure no logs are lost
-    const localLogs = getActivityLogs();
-    const map = new Map<string, ActivityLog>();
-    
-    localLogs.forEach((l) => map.set(l.id, l));
-    remoteLogs.forEach((l) => map.set(l.id, l));
-    
-    const combined = Array.from(map.values()).sort((a, b) => 
-      (b.timestamp || '').localeCompare(a.timestamp || '')
-    );
-
-    localStorage.setItem(ACTIVITY_LOGS_KEY, JSON.stringify(combined.slice(0, 500)));
-    return combined;
+    const logsRef = collection(db, AUDIT_LOGS_COLL);
+    const q = query(logsRef, orderBy('timestamp', 'desc'), limit(maxCount));
+    const snap = await getDocs(q);
+    const logs: ActivityLog[] = [];
+    snap.forEach((d) => logs.push(d.data() as ActivityLog));
+    return logs;
   } catch (err) {
-    console.warn('Could not fetch remote audit logs, using local cache:', err);
-    return getActivityLogs();
+    console.warn('Failed to fetch activity logs from Firestore:', err);
+    return [];
   }
 }
 
+// Backward-compatible aliases
+export const fetchCloudAuditLogs = fetchActivityLogs;
+export function getActivityLogs(): ActivityLog[] {
+  return [];
+}
 export function clearAuditLogs(): void {
-  localStorage.removeItem(ACTIVITY_LOGS_KEY);
+  // Audit logs in Firestore are immutable per security rules
+  console.info('Audit logs in Firestore are immutable.');
 }

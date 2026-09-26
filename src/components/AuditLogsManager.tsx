@@ -21,7 +21,7 @@ import {
   AlertTriangle
 } from 'lucide-react';
 import { ActivityLog, DeviceSession } from '../types';
-import { getActivityLogs, getDeviceSessions, clearAuditLogs, getOrCreateDeviceId } from '../utils/auditLogger';
+import { fetchActivityLogs, getDeviceSessions, getOrCreateDeviceId } from '../utils/auditLogger';
 import { useAuth } from '../context/AuthContext';
 
 interface AuditLogsManagerProps {
@@ -41,17 +41,38 @@ export const AuditLogsManager: React.FC<AuditLogsManagerProps> = ({
   const [activeSubTab, setActiveSubTab] = useState<'activity' | 'devices' | 'database'>('activity');
   const [searchTerm, setSearchTerm] = useState('');
   const [actionFilter, setActionFilter] = useState<string>('ALL');
+  const [logs, setLogs] = useState<ActivityLog[]>([]);
+  const [loadingLogs, setLoadingLogs] = useState(true);
 
   const currentDeviceId = getOrCreateDeviceId();
-  const logs = getActivityLogs();
   const devices = getDeviceSessions();
 
+  const loadLogs = async () => {
+    setLoadingLogs(true);
+    try {
+      const data = await fetchActivityLogs(300);
+      setLogs(data);
+    } catch (err) {
+      console.error('Failed to load audit logs:', err);
+    } finally {
+      setLoadingLogs(false);
+    }
+  };
+
+  React.useEffect(() => {
+    loadLogs();
+  }, []);
+
   const filteredLogs = logs.filter((log) => {
+    const term = searchTerm.toLowerCase();
+    const actorEmail = log.actor?.email || log.actorEmail || '';
+    const actorName = log.actor?.name || log.actorName || '';
     const matchesSearch = 
-      log.actionLabel.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      log.details.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (log.actorEmail && log.actorEmail.toLowerCase().includes(searchTerm.toLowerCase())) ||
-      log.deviceId.toLowerCase().includes(searchTerm.toLowerCase());
+      log.actionLabel.toLowerCase().includes(term) ||
+      log.details.toLowerCase().includes(term) ||
+      actorEmail.toLowerCase().includes(term) ||
+      actorName.toLowerCase().includes(term) ||
+      log.deviceId.toLowerCase().includes(term);
     
     const matchesAction = actionFilter === 'ALL' || log.action === actionFilter;
     return matchesSearch && matchesAction;
@@ -111,6 +132,15 @@ export const AuditLogsManager: React.FC<AuditLogsManagerProps> = ({
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
+          <button
+            onClick={loadLogs}
+            disabled={loadingLogs}
+            className="inline-flex items-center gap-1.5 px-3 py-2 bg-stone-100 hover:bg-stone-200 text-stone-700 text-xs font-semibold rounded-xl transition-all cursor-pointer"
+            title="Recharger les logs Firestore"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${loadingLogs ? 'animate-spin' : ''}`} />
+            <span>Actualiser</span>
+          </button>
           <button
             onClick={handleExportAuditCSV}
             className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-stone-900 hover:bg-stone-800 text-white text-xs font-semibold rounded-xl transition-all cursor-pointer shadow-2xs"

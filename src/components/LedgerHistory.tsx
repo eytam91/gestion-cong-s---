@@ -47,12 +47,17 @@ export const LedgerHistory: React.FC<LedgerHistoryProps> = ({
     const matchesEmp = selectedEmployeeId === 'ALL' || rec.employeeId === selectedEmployeeId;
     const matchesStatus = selectedStatus === 'ALL' || emp?.status === selectedStatus;
     const matchesType = selectedLeaveType === 'ALL' || rec.leaveType === selectedLeaveType;
-    const matchesSearch =
-      (emp?.name.toLowerCase().includes(searchTerm.toLowerCase()) || false) ||
-      (emp?.idNumber?.toLowerCase().includes(searchTerm.toLowerCase()) || false) ||
-      (emp?.matriculeGL?.toLowerCase().includes(searchTerm.toLowerCase()) || false) ||
-      (emp?.position?.toLowerCase().includes(searchTerm.toLowerCase()) || false) ||
-      (rec.notes?.toLowerCase().includes(searchTerm.toLowerCase()) || false);
+    const normTerm = searchTerm.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
+    const normalize = (s?: string) => (s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
+    const matchesSearch = !normTerm || (
+      (emp && normalize(emp.name).includes(normTerm)) ||
+      (emp?.surnames && normalize(emp.surnames).includes(normTerm)) ||
+      (emp?.givenNames && normalize(emp.givenNames).includes(normTerm)) ||
+      (emp?.idNumber && normalize(emp.idNumber).includes(normTerm)) ||
+      (emp?.matriculeGL && normalize(emp.matriculeGL).includes(normTerm)) ||
+      (emp?.position && normalize(emp.position).includes(normTerm)) ||
+      (rec.notes && normalize(rec.notes).includes(normTerm))
+    );
     return matchesEmp && matchesStatus && matchesType && matchesSearch;
   });
 

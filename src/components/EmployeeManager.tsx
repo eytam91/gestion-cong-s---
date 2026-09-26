@@ -27,7 +27,10 @@ import {
   AlertCircle,
   ShieldCheck,
   ShieldAlert,
-  FileCheck
+  FileCheck,
+  User,
+  UserCheck,
+  RotateCcw
 } from 'lucide-react';
 import { Employee, ContractType, EmployeeStatus, LeaveRecord, HRComplianceState } from '../types';
 import { calculateEmployeeStats, LEAVE_TYPE_LABELS } from '../utils/vacationCalc';
@@ -45,6 +48,7 @@ interface EmployeeManagerProps {
   onBatchImportEmployees: (employees: Employee[]) => Promise<void>;
   onOpenLeaveModal: (employeeId: string) => void;
   initialSelectedEmployeeId?: string | null;
+  canDelete?: boolean;
 }
 
 export const EmployeeManager: React.FC<EmployeeManagerProps> = ({
@@ -56,11 +60,15 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({
   onBatchImportEmployees,
   onOpenLeaveModal,
   initialSelectedEmployeeId,
+  canDelete = true,
 }) => {
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
+  const [searchNom, setSearchNom] = useState('');
+  const [searchPrenom, setSearchPrenom] = useState('');
+  const [searchMatricule, setSearchMatricule] = useState('');
   const [statusFilter, setStatusFilter] = useState<'ALL' | EmployeeStatus>('ALL');
   const [contractFilter, setContractFilter] = useState<'ALL' | ContractType>('ALL');
   const [complianceFilter, setComplianceFilter] = useState<'ALL' | HRComplianceState>('ALL');
@@ -326,20 +334,80 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({
     URL.revokeObjectURL(url);
   };
 
+  // Normalisation pour recherche insensible aux accents et à la casse
+  const normalizeText = (val?: string): string => {
+    if (!val) return '';
+    return val
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase()
+      .trim();
+  };
+
+  const hasActiveSearch = Boolean(
+    searchNom.trim() ||
+    searchPrenom.trim() ||
+    searchMatricule.trim() ||
+    searchTerm.trim()
+  );
+
+  const handleClearAllSearches = () => {
+    setSearchNom('');
+    setSearchPrenom('');
+    setSearchMatricule('');
+    setSearchTerm('');
+  };
+
   const filteredEmployees = employees.filter((emp) => {
-    const term = searchTerm.toLowerCase();
-    const matchesSearch = 
-      emp.name.toLowerCase().includes(term) ||
-      (emp.idNumber && emp.idNumber.toLowerCase().includes(term)) ||
-      (emp.matriculeGL && emp.matriculeGL.toLowerCase().includes(term)) ||
-      (emp.position && emp.position.toLowerCase().includes(term));
+    const normNom = normalizeText(searchNom);
+    const normPrenom = normalizeText(searchPrenom);
+    const normMatricule = normalizeText(searchMatricule);
+    const normGlobal = normalizeText(searchTerm);
+
+    // 1. Filtrer par Nom (Nom de famille / Surnames ou nom complet)
+    let matchesNom = true;
+    if (normNom) {
+      const surnamesNorm = normalizeText(emp.surnames);
+      const nameNorm = normalizeText(emp.name);
+      matchesNom = (Boolean(surnamesNorm) && surnamesNorm.includes(normNom)) || nameNorm.includes(normNom);
+    }
+
+    // 2. Filtrer par Prénom (Prénom / Given names ou nom complet)
+    let matchesPrenom = true;
+    if (normPrenom) {
+      const givenNamesNorm = normalizeText(emp.givenNames);
+      const nameNorm = normalizeText(emp.name);
+      matchesPrenom = (Boolean(givenNamesNorm) && givenNamesNorm.includes(normPrenom)) || nameNorm.includes(normPrenom);
+    }
+
+    // 3. Filtrer par Matricule (Matricule RH idNumber ou Matricule GL)
+    let matchesMatricule = true;
+    if (normMatricule) {
+      const idNumNorm = normalizeText(emp.idNumber);
+      const glNorm = normalizeText(emp.matriculeGL);
+      matchesMatricule = idNumNorm.includes(normMatricule) || glNorm.includes(normMatricule);
+    }
+
+    // 4. Filtrer par Recherche globale / mots-clés
+    let matchesGlobal = true;
+    if (normGlobal) {
+      matchesGlobal =
+        normalizeText(emp.name).includes(normGlobal) ||
+        (Boolean(emp.surnames) && normalizeText(emp.surnames).includes(normGlobal)) ||
+        (Boolean(emp.givenNames) && normalizeText(emp.givenNames).includes(normGlobal)) ||
+        (Boolean(emp.idNumber) && normalizeText(emp.idNumber).includes(normGlobal)) ||
+        (Boolean(emp.matriculeGL) && normalizeText(emp.matriculeGL).includes(normGlobal)) ||
+        (Boolean(emp.position) && normalizeText(emp.position).includes(normGlobal)) ||
+        (Boolean(emp.nationality) && normalizeText(emp.nationality).includes(normGlobal)) ||
+        (Boolean(emp.department) && normalizeText(emp.department).includes(normGlobal));
+    }
 
     const matchesStatus = statusFilter === 'ALL' || emp.status === statusFilter;
     const matchesContract = contractFilter === 'ALL' || emp.contractType === contractFilter;
     const matchesCompliance = complianceFilter === 'ALL' || 
       (complianceFilter === 'EN_REGLE' ? (emp.overallState === 'EN_REGLE' || !emp.overallState) : emp.overallState === complianceFilter);
 
-    return matchesSearch && matchesStatus && matchesContract && matchesCompliance;
+    return matchesNom && matchesPrenom && matchesMatricule && matchesGlobal && matchesStatus && matchesContract && matchesCompliance;
   });
 
   const countLocal = employees.filter(e => e.status === 'LOCAL').length;
@@ -854,21 +922,197 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({
       )}
 
       {/* Filter and Search Bar */}
-      <div className="bg-white p-4 rounded-2xl border border-stone-200/80 shadow-xs space-y-3">
-        <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3">
-          
-          {/* Search Box */}
-          <div className="relative flex-1">
-            <Search className="w-4 h-4 text-stone-400 absolute left-3.5 top-3 pointer-events-none" />
-            <input
-              type="text"
-              placeholder="Rechercher par Nom, N° Matricule, ou Poste..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-9 pr-3 py-2 rounded-xl border border-stone-200 text-xs bg-stone-50 text-stone-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-stone-900/10 transition-all font-medium"
-            />
+      <div className="bg-white p-4 sm:p-5 rounded-2xl border border-stone-200/80 shadow-xs space-y-4">
+        {/* Header de la recherche multi-critères */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 pb-3 border-b border-stone-100">
+          <div className="flex items-center gap-2">
+            <div className="w-8 h-8 rounded-xl bg-amber-50 text-amber-700 flex items-center justify-center shrink-0">
+              <Search className="w-4 h-4 text-amber-600" />
+            </div>
+            <div>
+              <h3 className="text-xs font-bold text-stone-900 uppercase tracking-wider">
+                Recherche d'Employés
+              </h3>
+              <p className="text-[11px] text-stone-500">
+                Filtrez instantanément par <strong>Nom</strong>, <strong>Prénom</strong> et <strong>Matricule</strong> (RH ou GL).
+              </p>
+            </div>
           </div>
 
+          <div className="flex items-center gap-2 shrink-0">
+            <span className="text-xs font-medium text-stone-600 bg-stone-100 px-2.5 py-1 rounded-lg">
+              <strong className="text-stone-900 font-bold">{filteredEmployees.length}</strong> / {employees.length} collaborateur(s)
+            </span>
+            {hasActiveSearch && (
+              <button
+                type="button"
+                onClick={handleClearAllSearches}
+                className="text-xs font-bold text-stone-600 hover:text-stone-900 hover:bg-stone-100 px-2.5 py-1 rounded-lg flex items-center gap-1.5 transition-colors cursor-pointer border border-stone-200"
+                title="Effacer tous les critères de recherche"
+              >
+                <RotateCcw className="w-3.5 h-3.5 text-stone-500" />
+                <span>Effacer</span>
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Champs de recherche dédiés : Nom, Prénom, Matricule, et Poste/Mots-clés */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+          {/* 1. Recherche par Nom */}
+          <div className="space-y-1">
+            <label className="text-[11px] font-bold text-stone-700 flex items-center gap-1 uppercase tracking-wider">
+              <User className="w-3 h-3 text-amber-600" />
+              Nom de famille
+            </label>
+            <div className="relative">
+              <input
+                type="text"
+                placeholder="ex: ABADAME, ALAMI..."
+                value={searchNom}
+                onChange={(e) => setSearchNom(e.target.value)}
+                className="w-full pl-3 pr-7 py-2 rounded-xl border border-stone-200 text-xs bg-stone-50 text-stone-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 transition-all font-medium"
+              />
+              {searchNom && (
+                <button
+                  type="button"
+                  onClick={() => setSearchNom('')}
+                  className="absolute right-2 top-2 text-stone-400 hover:text-stone-700 p-0.5 cursor-pointer"
+                  title="Effacer le nom"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* 2. Recherche par Prénom */}
+          <div className="space-y-1">
+            <label className="text-[11px] font-bold text-stone-700 flex items-center gap-1 uppercase tracking-wider">
+              <UserCheck className="w-3 h-3 text-teal-600" />
+              Prénom
+            </label>
+            <div className="relative">
+              <input
+                type="text"
+                placeholder="ex: PAUL, Karim, Marie..."
+                value={searchPrenom}
+                onChange={(e) => setSearchPrenom(e.target.value)}
+                className="w-full pl-3 pr-7 py-2 rounded-xl border border-stone-200 text-xs bg-stone-50 text-stone-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-teal-500/20 focus:border-teal-500 transition-all font-medium"
+              />
+              {searchPrenom && (
+                <button
+                  type="button"
+                  onClick={() => setSearchPrenom('')}
+                  className="absolute right-2 top-2 text-stone-400 hover:text-stone-700 p-0.5 cursor-pointer"
+                  title="Effacer le prénom"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* 3. Recherche par Matricule */}
+          <div className="space-y-1">
+            <label className="text-[11px] font-bold text-stone-700 flex items-center gap-1 uppercase tracking-wider">
+              <Hash className="w-3 h-3 text-indigo-600" />
+              Matricule RH / GL
+            </label>
+            <div className="relative">
+              <input
+                type="text"
+                placeholder="ex: P422766, MAT-0001, GL-001..."
+                value={searchMatricule}
+                onChange={(e) => setSearchMatricule(e.target.value)}
+                className="w-full pl-3 pr-7 py-2 rounded-xl border border-stone-200 text-xs bg-stone-50 text-stone-900 font-mono focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all font-medium"
+              />
+              {searchMatricule && (
+                <button
+                  type="button"
+                  onClick={() => setSearchMatricule('')}
+                  className="absolute right-2 top-2 text-stone-400 hover:text-stone-700 p-0.5 cursor-pointer"
+                  title="Effacer le matricule"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* 4. Recherche libre / Poste */}
+          <div className="space-y-1">
+            <label className="text-[11px] font-bold text-stone-700 flex items-center gap-1 uppercase tracking-wider">
+              <Briefcase className="w-3 h-3 text-stone-500" />
+              Poste / Mots-clés
+            </label>
+            <div className="relative">
+              <input
+                type="text"
+                placeholder="ex: Chauffeur, Gardien, Ingénieur..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full pl-3 pr-7 py-2 rounded-xl border border-stone-200 text-xs bg-stone-50 text-stone-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-stone-900/10 transition-all font-medium"
+              />
+              {searchTerm && (
+                <button
+                  type="button"
+                  onClick={() => setSearchTerm('')}
+                  className="absolute right-2 top-2 text-stone-400 hover:text-stone-700 p-0.5 cursor-pointer"
+                  title="Effacer les mots-clés"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Badges des filtres actifs */}
+        {hasActiveSearch && (
+          <div className="flex items-center gap-1.5 flex-wrap pt-1 text-2xs">
+            <span className="text-stone-400 font-bold uppercase tracking-wider">Filtres de recherche actifs :</span>
+            {searchNom && (
+              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-amber-50 text-amber-900 border border-amber-200 font-medium">
+                <User className="w-3 h-3 text-amber-700" />
+                <span>Nom : <strong>{searchNom}</strong></span>
+                <button type="button" onClick={() => setSearchNom('')} className="hover:text-amber-950 ml-0.5 cursor-pointer">
+                  <X className="w-3 h-3" />
+                </button>
+              </span>
+            )}
+            {searchPrenom && (
+              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-teal-50 text-teal-900 border border-teal-200 font-medium">
+                <UserCheck className="w-3 h-3 text-teal-700" />
+                <span>Prénom : <strong>{searchPrenom}</strong></span>
+                <button type="button" onClick={() => setSearchPrenom('')} className="hover:text-teal-950 ml-0.5 cursor-pointer">
+                  <X className="w-3 h-3" />
+                </button>
+              </span>
+            )}
+            {searchMatricule && (
+              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-indigo-50 text-indigo-900 border border-indigo-200 font-medium">
+                <Hash className="w-3 h-3 text-indigo-700" />
+                <span>Matricule : <strong>{searchMatricule}</strong></span>
+                <button type="button" onClick={() => setSearchMatricule('')} className="hover:text-indigo-950 ml-0.5 cursor-pointer">
+                  <X className="w-3 h-3" />
+                </button>
+              </span>
+            )}
+            {searchTerm && (
+              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-stone-100 text-stone-800 border border-stone-200 font-medium">
+                <Briefcase className="w-3 h-3 text-stone-600" />
+                <span>Poste/Mots-clés : <strong>{searchTerm}</strong></span>
+                <button type="button" onClick={() => setSearchTerm('')} className="hover:text-stone-950 ml-0.5 cursor-pointer">
+                  <X className="w-3 h-3" />
+                </button>
+              </span>
+            )}
+          </div>
+        )}
+
+        {/* Ligne des Filtres Statut, Contrat */}
+        <div className="pt-2.5 border-t border-stone-100 flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
           {/* Status Filter Buttons */}
           <div className="flex items-center gap-1.5 flex-wrap">
             <span className="text-[10px] font-bold text-stone-400 uppercase tracking-wider shrink-0 flex items-center gap-1">
@@ -944,6 +1188,7 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({
               Type B ({countTypeB})
             </button>
           </div>
+        </div>
 
           {/* Compliance Filter Buttons */}
           <div className="flex items-center gap-1.5 flex-wrap pt-2 border-t border-stone-100 w-full">
@@ -1005,9 +1250,7 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({
               À Compléter ({countACompleter})
             </button>
           </div>
-
         </div>
-      </div>
 
       {/* Employees Grid */}
       {filteredEmployees.length === 0 ? (
@@ -1017,14 +1260,33 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({
           </div>
           <div>
             <h3 className="text-base font-bold text-stone-900">
-              {employees.length === 0 ? "Aucun employé enregistré pour le moment" : "Aucun employé ne correspond aux filtres"}
+              {employees.length === 0 
+                ? "Aucun employé enregistré pour le moment" 
+                : hasActiveSearch 
+                  ? "Aucun collaborateur ne correspond à vos critères de recherche" 
+                  : "Aucun employé ne correspond aux filtres"}
             </h3>
             <p className="text-xs text-stone-500 mt-1 max-w-md mx-auto">
               {employees.length === 0 
                 ? "Commencez par ajouter votre premier collaborateur ou importez directement une liste complète depuis un fichier Excel / CSV." 
-                : "Essayez de modifier votre recherche ou vos filtres de statut."}
+                : hasActiveSearch
+                  ? "Vérifiez l'orthographe du nom, prénom ou matricule saisi, ou réinitialisez la recherche."
+                  : "Essayez de modifier votre recherche ou vos filtres de statut."}
             </p>
           </div>
+
+          {hasActiveSearch && (
+            <div className="pt-2">
+              <button
+                type="button"
+                onClick={handleClearAllSearches}
+                className="inline-flex items-center gap-2 bg-stone-900 hover:bg-stone-800 text-white text-xs font-bold px-4 py-2.5 rounded-xl shadow-xs transition-all cursor-pointer"
+              >
+                <RotateCcw className="w-4 h-4 text-amber-400" />
+                <span>Réinitialiser les critères de recherche</span>
+              </button>
+            </div>
+          )}
 
           {employees.length === 0 && (
             <div className="flex items-center justify-center gap-3 pt-2">
@@ -1218,13 +1480,22 @@ export const EmployeeManager: React.FC<EmployeeManagerProps> = ({
                     >
                       <Edit3 className="w-4 h-4" />
                     </button>
-                    <button
-                      onClick={() => setEmployeeToDelete(emp)}
-                      className="p-1.5 text-stone-400 hover:text-red-600 hover:bg-red-50 rounded-lg cursor-pointer transition-colors"
-                      title="Supprimer cet employé"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
+                    {canDelete ? (
+                      <button
+                        onClick={() => setEmployeeToDelete(emp)}
+                        className="p-1.5 text-stone-400 hover:text-red-600 hover:bg-red-50 rounded-lg cursor-pointer transition-colors"
+                        title="Supprimer cet employé"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    ) : (
+                      <span 
+                        className="p-1.5 text-stone-300 cursor-not-allowed" 
+                        title="Seul un Administrateur peut supprimer un collaborateur"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </span>
+                    )}
                   </div>
                 </div>
               </div>

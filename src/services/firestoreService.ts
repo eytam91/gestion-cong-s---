@@ -5,77 +5,69 @@ import {
   getDoc, 
   setDoc, 
   deleteDoc, 
-  writeBatch
+  writeBatch,
+  WriteBatch
 } from 'firebase/firestore';
 import { db } from '../lib/firebase';
-import { Employee, LeaveRecord } from '../types';
-import { SAMPLE_DEMO_LEAVE_RECORDS } from '../utils/vacationCalc';
+import { Employee, LeaveRecord, DbUser, UserRole } from '../types';
 import { INITIAL_HR_EMPLOYEES } from '../data/hrEmployeesData';
+import { SAMPLE_DEMO_LEAVE_RECORDS } from '../utils/vacationCalc';
+
+export { type DbUser, type UserRole };
 
 const EMPLOYEES_COLL = 'employees';
 const LEAVE_RECORDS_COLL = 'leave_records';
 const USERS_COLL = 'users';
 
-export interface DbUser {
-  uid: string;
-  email: string;
-  name: string;
-  role: 'ADMIN' | 'HR Manager';
-  password?: string;
-  createdAt: string;
+/**
+ * Executes Firestore batch operations in safe chunks of 400 (well within the 500 operations limit)
+ */
+export async function commitInChunks(
+  operations: ((batch: WriteBatch) => void)[],
+  chunkSize: number = 400
+): Promise<void> {
+  for (let i = 0; i < operations.length; i += chunkSize) {
+    const chunk = operations.slice(i, i + chunkSize);
+    const batch = writeBatch(db);
+    for (const op of chunk) {
+      op(batch);
+    }
+    await batch.commit();
+  }
 }
 
-export const DEFAULT_USERS: DbUser[] = [
-  { uid: 'local-admin', email: 'admin@local.app', name: 'Administrateur (admin)', role: 'ADMIN', password: 'admin123', createdAt: '2026-01-01T00:00:00.000Z' },
-  { uid: 'local-hrbata', email: 'hrbata@local.app', name: 'RH Bata (HRbata)', role: 'HR Manager', password: 'hrbata123', createdAt: '2026-01-01T00:00:00.000Z' },
-  { uid: 'local-hrmalabo', email: 'hrmalabo@local.app', name: 'RH Malabo (hrmalabo)', role: 'HR Manager', password: 'hrmalabo123', createdAt: '2026-01-01T00:00:00.000Z' },
-  { uid: 'local-parkmalabo', email: 'parkmalabo@local.app', name: 'Parc Malabo (parkmalabo)', role: 'HR Manager', password: 'parkmalabo123', createdAt: '2026-01-01T00:00:00.000Z' },
-  { uid: 'local-parkbata', email: 'parkbata@local.app', name: 'Parc Bata (parkbata)', role: 'HR Manager', password: 'parkbata123', createdAt: '2026-01-01T00:00:00.000Z' },
-  { uid: 'local-oabdellah', email: 'oabdellah@local.app', name: 'O. Abdellah (oabdellah)', role: 'HR Manager', password: 'oabdellah123', createdAt: '2026-01-01T00:00:00.000Z' },
-];
+/**
+ * Helper to remove undefined fields recursively so Firestore doesn't reject data
+ */
+function cleanForFirestore<T extends Record<string, any>>(obj: T): T {
+  const result: any = {};
+  for (const [key, value] of Object.entries(obj)) {
+    if (value !== undefined) {
+      if (value && typeof value === 'object' && !Array.isArray(value) && !(value instanceof Date)) {
+        result[key] = cleanForFirestore(value);
+      } else {
+        result[key] = value;
+      }
+    }
+  }
+  return result;
+}
+
+// ----------------- BULK FETCH (NO DEMO SEEDING) -----------------
 
 /**
- * Ensures initial collections and auth users exist in Firestore, keeping employee database clean.
+ * Fetches all master HR data (employees and leave records) directly from Firestore.
+ * Does NOT auto-seed dummy or demo data.
  */
-export async function initializeFirestoreData(): Promise<{ employees: Employee[]; leaveRecords: LeaveRecord[] }> {
+export async function fetchAllData(): Promise<{ employees: Employee[]; leaveRecords: LeaveRecord[] }> {
   try {
-    // Seed default authentication users if missing
-    const userSnap = await getDocs(collection(db, USERS_COLL));
-    if (userSnap.empty) {
-      console.log('Seeding default auth user accounts in Firestore...');
-      const batch = writeBatch(db);
-      for (const u of DEFAULT_USERS) {
-        const userRef = doc(db, USERS_COLL, u.uid);
-        batch.set(userRef, u);
-      }
-      await batch.commit().catch((e) => console.warn('User seeding failed:', e));
-    }
-
-    const empSnap = await getDocs(collection(db, EMPLOYEES_COLL));
-    let employees: Employee[] = [];
-    empSnap.forEach((d) => {
-      employees.push(d.data() as Employee);
-    });
-
-    // If Firestore is completely empty or has no employees, seed the complete 142 HR employee records
-    if (employees.length === 0 && INITIAL_HR_EMPLOYEES.length > 0) {
-      console.log('Seeding full enterprise HR employee records with documents into Firestore...');
-      await batchSaveEmployees(INITIAL_HR_EMPLOYEES);
-      employees = [...INITIAL_HR_EMPLOYEES];
-    }
-
-    const leaveSnap = await getDocs(collection(db, LEAVE_RECORDS_COLL));
-    const leaveRecords: LeaveRecord[] = [];
-    leaveSnap.forEach((d) => {
-      leaveRecords.push(d.data() as LeaveRecord);
-    });
-
-    return { 
-      employees: employees.sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || '')), 
-      leaveRecords: leaveRecords.sort((a, b) => (b.startDate || '').localeCompare(a.startDate || ''))
-    };
+    const [employees, leaveRecords] = await Promise.all([
+      fetchEmployees(),
+      fetchLeaveRecords()
+    ]);
+    return { employees, leaveRecords };
   } catch (error) {
-    console.error('Failed to initialize or fetch Firestore data:', error);
+    console.error('Failed to fetch all data from Firestore:', error);
     return { employees: [], leaveRecords: [] };
   }
 }
@@ -94,23 +86,6 @@ export async function fetchEmployees(): Promise<Employee[]> {
   }
 }
 
-/**
- * Helper to remove undefined fields recursively so Firestore doesn't throw invalid data errors
- */
-function cleanForFirestore<T extends Record<string, any>>(obj: T): T {
-  const result: any = {};
-  for (const [key, value] of Object.entries(obj)) {
-    if (value !== undefined) {
-      if (value && typeof value === 'object' && !Array.isArray(value) && !(value instanceof Date)) {
-        result[key] = cleanForFirestore(value);
-      } else {
-        result[key] = value;
-      }
-    }
-  }
-  return result;
-}
-
 export async function saveEmployee(employee: Employee): Promise<Employee> {
   const empRef = doc(db, EMPLOYEES_COLL, employee.id);
   const cleaned = cleanForFirestore(employee);
@@ -120,17 +95,11 @@ export async function saveEmployee(employee: Employee): Promise<Employee> {
 
 export async function batchSaveEmployees(employees: Employee[]): Promise<number> {
   if (employees.length === 0) return 0;
-  // Firestore limit is 500 writes per batch. We chunk by 400 safely.
-  const BATCH_SIZE = 400;
-  for (let i = 0; i < employees.length; i += BATCH_SIZE) {
-    const chunk = employees.slice(i, i + BATCH_SIZE);
-    const batch = writeBatch(db);
-    for (const emp of chunk) {
-      const empRef = doc(db, EMPLOYEES_COLL, emp.id);
-      batch.set(empRef, cleanForFirestore(emp));
-    }
-    await batch.commit();
-  }
+  const operations: ((batch: WriteBatch) => void)[] = employees.map((emp) => (batch) => {
+    const empRef = doc(db, EMPLOYEES_COLL, emp.id);
+    batch.set(empRef, cleanForFirestore(emp));
+  });
+  await commitInChunks(operations);
   return employees.length;
 }
 
@@ -145,22 +114,20 @@ export async function deleteEmployeeDoc(employeeId: string): Promise<void> {
   const empRef = doc(db, EMPLOYEES_COLL, employeeId);
   await deleteDoc(empRef);
 
-  // Also delete associated leave records
+  // Cascade delete associated leave records
   try {
     const leaveSnap = await getDocs(collection(db, LEAVE_RECORDS_COLL));
-    const batch = writeBatch(db);
-    let hasBatchDeletes = false;
+    const deleteOps: ((batch: WriteBatch) => void)[] = [];
 
     leaveSnap.forEach((d) => {
       const data = d.data() as LeaveRecord;
       if (data.employeeId === employeeId) {
-        batch.delete(doc(db, LEAVE_RECORDS_COLL, d.id));
-        hasBatchDeletes = true;
+        deleteOps.push((batch) => batch.delete(doc(db, LEAVE_RECORDS_COLL, d.id)));
       }
     });
 
-    if (hasBatchDeletes) {
-      await batch.commit();
+    if (deleteOps.length > 0) {
+      await commitInChunks(deleteOps);
     }
   } catch (err) {
     console.warn('Could not cascade delete leave records:', err);
@@ -183,7 +150,7 @@ export async function fetchLeaveRecords(): Promise<LeaveRecord[]> {
 
 export async function saveLeaveRecord(record: LeaveRecord): Promise<LeaveRecord> {
   const recRef = doc(db, LEAVE_RECORDS_COLL, record.id);
-  await setDoc(recRef, record);
+  await setDoc(recRef, cleanForFirestore(record));
   return record;
 }
 
@@ -192,52 +159,41 @@ export async function deleteLeaveRecordDoc(recordId: string): Promise<void> {
   await deleteDoc(recRef);
 }
 
-// ----------------- USERS -----------------
+// ----------------- USERS & ROLE MANAGEMENT -----------------
 
 export async function fetchUsers(): Promise<DbUser[]> {
   try {
     const snap = await getDocs(collection(db, USERS_COLL));
     const list: DbUser[] = [];
     snap.forEach((d) => list.push(d.data() as DbUser));
-    
-    // Merge any missing default users so that all configured accounts are always available
-    const mergedList = [...list];
-    const batch = writeBatch(db);
-    let hasNewSeeds = false;
-
-    for (const def of DEFAULT_USERS) {
-      const exists = mergedList.some(
-        (u) => 
-          u.uid === def.uid || 
-          u.email.toLowerCase() === def.email.toLowerCase() ||
-          u.name.toLowerCase().includes(def.uid.replace('local-', '').toLowerCase())
-      );
-      if (!exists) {
-        mergedList.push(def);
-        batch.set(doc(db, USERS_COLL, def.uid), def);
-        hasNewSeeds = true;
-      }
-    }
-
-    if (hasNewSeeds) {
-      await batch.commit().catch((e) => console.warn('Seeding default users failed:', e));
-    }
-
-    return mergedList;
+    return list.sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
   } catch (err) {
-    console.warn('Failed to fetch remote users, returning default users:', err);
-    return DEFAULT_USERS;
+    console.warn('Failed to fetch users from Firestore:', err);
+    return [];
   }
 }
 
 export async function saveUserDoc(user: DbUser): Promise<DbUser> {
   try {
     const userRef = doc(db, USERS_COLL, user.uid);
-    await setDoc(userRef, user, { merge: true });
+    await setDoc(userRef, cleanForFirestore(user), { merge: true });
   } catch (err) {
     console.warn('Failed to persist user in Firestore:', err);
   }
   return user;
+}
+
+export async function setUserRole(uid: string, role: UserRole, approverUid?: string): Promise<void> {
+  const userRef = doc(db, USERS_COLL, uid);
+  await setDoc(
+    userRef, 
+    cleanForFirestore({
+      role,
+      approvedAt: new Date().toISOString(),
+      ...(approverUid ? { approvedBy: approverUid } : {})
+    }), 
+    { merge: true }
+  );
 }
 
 export async function deleteUserDoc(uid: string): Promise<void> {
@@ -254,48 +210,59 @@ export async function getOrCreateDbUser(uid: string, email: string, name?: strin
       return userSnap.data() as DbUser;
     }
 
-    const role = (email && (email.toLowerCase().includes('admin') || email.toLowerCase().includes('itseytam')))
-      ? 'ADMIN'
-      : 'HR Manager';
+    // Determine initial role:
+    // If no users exist in the database, promote the very first user to ADMIN.
+    // Also if email is known admin email (itseytam@gmail.com or contains 'admin'), assign ADMIN.
+    // Otherwise, assign 'PENDING' awaiting approval.
+    let initialRole: UserRole = 'PENDING';
+    const allUsersSnap = await getDocs(collection(db, USERS_COLL));
+    const isFirstUser = allUsersSnap.empty;
+    const isExplicitAdminEmail = Boolean(
+      email && (
+        email.toLowerCase() === 'itseytam@gmail.com' ||
+        email.toLowerCase().startsWith('admin@') ||
+        email.toLowerCase() === 'admin@local.app'
+      )
+    );
+
+    if (isFirstUser || isExplicitAdminEmail) {
+      initialRole = 'ADMIN';
+    }
 
     const newUser: DbUser = {
       uid,
       email: email || `${uid}@local.app`,
-      name: name || (email ? email.split('@')[0] : 'Utilisateur'),
-      role,
+      name: name || (email ? email.split('@')[0] : 'Collaborateur'),
+      role: initialRole,
       createdAt: new Date().toISOString(),
     };
 
-    await setDoc(userRef, newUser);
+    await setDoc(userRef, cleanForFirestore(newUser));
     return newUser;
   } catch (err) {
     console.warn('Error in getOrCreateDbUser:', err);
     return {
       uid,
       email: email || 'user@local.app',
-      name: name || 'Utilisateur',
-      role: 'ADMIN',
+      name: name || 'Collaborateur',
+      role: 'PENDING',
       createdAt: new Date().toISOString(),
     };
   }
 }
 
-// ----------------- RESET & CLEAR -----------------
+// ----------------- ADMIN TOOLS: RESET & CLEAR -----------------
 
 export async function resetDemoDataToFirestore(): Promise<void> {
   await clearAllFirestoreData();
 
-  // Save the full set of 142 enterprise HR employee records with documents
+  // Save the full set of enterprise HR employee records with documents
   await batchSaveEmployees(INITIAL_HR_EMPLOYEES);
 
-  const batch = writeBatch(db);
-  for (const rec of SAMPLE_DEMO_LEAVE_RECORDS) {
-    batch.set(doc(db, LEAVE_RECORDS_COLL, rec.id), rec);
-  }
-  for (const u of DEFAULT_USERS) {
-    batch.set(doc(db, USERS_COLL, u.uid), u);
-  }
-  await batch.commit();
+  const operations: ((batch: WriteBatch) => void)[] = SAMPLE_DEMO_LEAVE_RECORDS.map((rec) => (batch) => {
+    batch.set(doc(db, LEAVE_RECORDS_COLL, rec.id), cleanForFirestore(rec));
+  });
+  await commitInChunks(operations);
 }
 
 export async function clearAllFirestoreData(): Promise<void> {
@@ -308,15 +275,11 @@ export async function clearAllFirestoreData(): Promise<void> {
       ...leaveSnap.docs.map(d => doc(db, LEAVE_RECORDS_COLL, d.id))
     ];
 
-    const BATCH_SIZE = 400;
-    for (let i = 0; i < allDocRefs.length; i += BATCH_SIZE) {
-      const chunk = allDocRefs.slice(i, i + BATCH_SIZE);
-      const batch = writeBatch(db);
-      for (const ref of chunk) {
-        batch.delete(ref);
-      }
-      await batch.commit();
-    }
+    const operations: ((batch: WriteBatch) => void)[] = allDocRefs.map((ref) => (batch) => {
+      batch.delete(ref);
+    });
+
+    await commitInChunks(operations);
   } catch (err) {
     console.error('Error clearing data:', err);
   }

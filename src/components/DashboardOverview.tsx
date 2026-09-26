@@ -220,7 +220,10 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
       {/* Primary KPI Metrics Row */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {/* Total Employés & Repartition */}
-        <div className="bg-white p-5 rounded-2xl border border-stone-200/80 shadow-xs flex items-center justify-between">
+        <div 
+          className="bg-white p-5 rounded-2xl border border-stone-200/80 shadow-xs flex items-center justify-between"
+          title={`Effectif total : ${totalEmployees} salariés dont ${countLocal} personnel local et ${countExpat} expatrié(s).`}
+        >
           <div>
             <p className="text-xs font-semibold text-stone-400 uppercase tracking-wider">Effectif Global</p>
             <p className="text-2xl font-bold text-stone-900 mt-1">{totalEmployees}</p>
@@ -236,7 +239,10 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
         </div>
 
         {/* Total Solde Négatif en Jours */}
-        <div className="bg-white p-5 rounded-2xl border border-stone-200/80 shadow-xs flex items-center justify-between">
+        <div 
+          className="bg-white p-5 rounded-2xl border border-stone-200/80 shadow-xs flex items-center justify-between"
+          title={`Total des jours de congés accordés en avance au-delà des droits acquis (-${totalDebtDays.toFixed(1)} jours).`}
+        >
           <div>
             <p className="text-xs font-semibold text-stone-400 uppercase tracking-wider">Solde Négatif Global</p>
             <p className="text-2xl font-bold text-red-600 mt-1 font-mono">
@@ -252,7 +258,10 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
         </div>
 
         {/* Congés Non Payés (Sans Solde) */}
-        <div className="bg-white p-5 rounded-2xl border border-stone-200/80 shadow-xs flex items-center justify-between">
+        <div 
+          className="bg-white p-5 rounded-2xl border border-stone-200/80 shadow-xs flex items-center justify-between"
+          title={`Total des absences autorisées sans maintien de rémunération (${totalUnpaidLeaveDays} jours).`}
+        >
           <div>
             <p className="text-xs font-semibold text-stone-400 uppercase tracking-wider">Congés Sans Solde</p>
             <p className="text-2xl font-bold text-amber-600 mt-1 font-mono">
@@ -268,7 +277,10 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
         </div>
 
         {/* Congés Payés Pris */}
-        <div className="bg-white p-5 rounded-2xl border border-stone-200/80 shadow-xs flex items-center justify-between">
+        <div 
+          className="bg-white p-5 rounded-2xl border border-stone-200/80 shadow-xs flex items-center justify-between"
+          title={`Cumul des jours de congés payés standard déjà consommés (${globalLeaves.congePaye} jours).`}
+        >
           <div>
             <p className="text-xs font-semibold text-stone-400 uppercase tracking-wider">Total Congés Consommés</p>
             <p className="text-2xl font-bold text-emerald-600 mt-1 font-mono">

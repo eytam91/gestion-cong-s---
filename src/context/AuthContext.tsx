@@ -3,25 +3,72 @@ import {
   User as FirebaseUser, 
   onAuthStateChanged, 
   signOut,
-  signInWithPopup
+  signInWithPopup,
+  signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
+  updateProfile
 } from 'firebase/auth';
 import { auth, googleAuthProvider } from '../lib/firebase';
-import { getOrCreateDbUser, DbUser, DEFAULT_USERS, fetchUsers, saveUserDoc } from '../services/firestoreService';
+import { getOrCreateDbUser, DbUser, UserRole } from '../services/firestoreService';
 import { addActivityLog } from '../utils/auditLogger';
 
-interface AuthContextType {
-  user: FirebaseUser | { displayName?: string; email?: string; uid?: string } | null;
+/**
+ * Maps short username to Firebase email format using the @local.app domain
+ */
+export function usernameToEmail(usernameOrEmail: string): string {
+  const clean = usernameOrEmail.trim().toLowerCase();
+  return clean.includes('@') ? clean : `${clean}@local.app`;
+}
+
+/**
+ * Translates Firebase Auth error codes to helpful, user-friendly French messages
+ */
+export function formatAuthError(error: any): string {
+  if (!error) return "Une erreur inattendue est survenue.";
+  const code = error.code || '';
+
+  switch (code) {
+    case 'auth/invalid-credential':
+    case 'auth/wrong-password':
+    case 'auth/user-not-found':
+      return "Identifiant ou mot de passe incorrect. Veuillez vérifier vos accès.";
+    case 'auth/email-already-in-use':
+      return "Cet identifiant ou cette adresse email est déjà associé à un compte.";
+    case 'auth/weak-password':
+      return "Le mot de passe doit comporter au moins 6 caractères.";
+    case 'auth/invalid-email':
+      return "Le format de l'identifiant ou de l'adresse email est invalide.";
+    case 'auth/user-disabled':
+      return "Ce compte utilisateur a été désactivé par l'administrateur.";
+    case 'auth/too-many-requests':
+      return "Trop de tentatives infructueuses. Veuillez patienter un instant avant de réessayer.";
+    case 'auth/popup-closed-by-user':
+      return "Connexion annulée : la fenêtre de connexion Google a été fermée.";
+    case 'auth/popup-blocked':
+      return "La fenêtre de connexion Google a été bloquée par votre navigateur.";
+    case 'auth/unauthorized-domain':
+      return "Ce domaine n'est pas encore autorisé dans Firebase Console (Domaines autorisés).";
+    case 'auth/network-request-failed':
+      return "Impossible de joindre le serveur d'authentification. Vérifiez votre connexion Internet.";
+    default:
+      return error.message || "Erreur lors de l'authentification.";
+  }
+}
+
+export interface AuthContextType {
+  user: FirebaseUser | null;
   dbUser: DbUser | null;
   idToken: string | null;
   loading: boolean;
   isAdmin: boolean;
+  isStaff: boolean;
+  isPending: boolean;
   isAuthenticated: boolean;
   signInWithGoogle: () => Promise<void>;
   signInWithEmail: (emailOrUsername: string, pass: string) => Promise<void>;
-  registerNewAccount: (username: string, fullName: string, role: 'ADMIN' | 'HR Manager', password?: string) => Promise<void>;
-  loginAsLocalUser: (username: string) => Promise<void>;
+  registerWithEmail: (emailOrUsername: string, pass: string, fullName: string) => Promise<void>;
   logout: () => Promise<void>;
-  getToken: () => Promise<string | null>;
+  reloadUserProfile: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType>({
@@ -30,30 +77,48 @@ const AuthContext = createContext<AuthContextType>({
   idToken: null,
   loading: true,
   isAdmin: false,
+  isStaff: false,
+  isPending: false,
   isAuthenticated: false,
   signInWithGoogle: async () => {},
   signInWithEmail: async () => {},
-  registerNewAccount: async () => {},
-  loginAsLocalUser: async () => {},
+  registerWithEmail: async () => {},
   logout: async () => {},
-  getToken: async () => null,
+  reloadUserProfile: async () => {},
 });
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [user, setUser] = useState<any | null>(null);
+  const [user, setUser] = useState<FirebaseUser | null>(null);
   const [dbUser, setDbUser] = useState<DbUser | null>(null);
   const [idToken, setIdToken] = useState<string | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
 
-  // Initialize saved local user session on mount
+  const fetchProfileForUser = async (currentUser: FirebaseUser) => {
+    try {
+      const token = await currentUser.getIdToken();
+      setIdToken(token);
+      const profile = await getOrCreateDbUser(
+        currentUser.uid,
+        currentUser.email || '',
+        currentUser.displayName || ''
+      );
+      setDbUser(profile);
+      localStorage.setItem('local_db_user', JSON.stringify(profile));
+      return profile;
+    } catch (err) {
+      console.error('Error fetching user profile from Firestore:', err);
+      return null;
+    }
+  };
+
   useEffect(() => {
+    // Restore cached profile on first mount for instant UI responsiveness
     const savedLocalUser = localStorage.getItem('local_db_user');
     if (savedLocalUser) {
       try {
         const parsed: DbUser = JSON.parse(savedLocalUser);
         setDbUser(parsed);
-        setUser({ displayName: parsed.name, email: parsed.email, uid: parsed.uid });
-      } catch (e) {
+      } catch {
         localStorage.removeItem('local_db_user');
       }
     }
@@ -61,19 +126,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
       if (currentUser && !currentUser.isAnonymous) {
         setUser(currentUser);
-        try {
-          const token = await currentUser.getIdToken();
-          setIdToken(token);
-          const profile = await getOrCreateDbUser(
-            currentUser.uid,
-            currentUser.email || '',
-            currentUser.displayName || ''
-          );
-          setDbUser(profile);
-          localStorage.setItem('local_db_user', JSON.stringify(profile));
-        } catch (err) {
-          console.error('Error fetching user profile from Firestore:', err);
-        }
+        await fetchProfileForUser(currentUser);
+      } else {
+        setUser(null);
+        setDbUser(null);
+        setIdToken(null);
+        localStorage.removeItem('local_db_user');
       }
       setLoading(false);
     });
@@ -81,201 +139,126 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return () => unsubscribe();
   }, []);
 
-  const signInWithGoogle = async () => {
-    try {
-      localStorage.removeItem('local_db_user');
-      const result = await signInWithPopup(auth, googleAuthProvider);
-      if (result.user) {
-        setUser(result.user);
-        const token = await result.user.getIdToken();
-        setIdToken(token);
-        const profile = await getOrCreateDbUser(
-          result.user.uid,
-          result.user.email || '',
-          result.user.displayName || ''
-        );
-        setDbUser(profile);
-        localStorage.setItem('local_db_user', JSON.stringify(profile));
-      }
-    } catch (error: any) {
-      console.error('Google Sign-In failed:', error);
-      let errorMsg = 'Erreur lors de la connexion Google.';
-      if (error?.code === 'auth/unauthorized-domain') {
-        errorMsg = "Ce domaine n'est pas encore activé dans la console Firebase (Domaines Autorisés). Utilisez la connexion directe par identifiant ou 1-clic ci-dessous.";
-      } else if (error?.code === 'auth/popup-blocked') {
-        errorMsg = "La fenêtre pop-up Google a été bloquée par le navigateur. Veuillez autoriser les pop-ups.";
-      } else if (error?.code === 'auth/popup-closed-by-user') {
-        errorMsg = "Connexion annulée : la fenêtre Google a été fermée.";
-      } else if (error?.code === 'auth/operation-not-allowed') {
-        errorMsg = "La connexion Google n'est pas activée dans ce projet Firebase. Utilisez la connexion par identifiant.";
-      }
-      throw new Error(errorMsg);
+  const reloadUserProfile = async () => {
+    if (auth.currentUser) {
+      await fetchProfileForUser(auth.currentUser);
     }
   };
 
-  const loginAsLocalUser = async (userKey: string) => {
+  const signInWithGoogle = async () => {
     try {
-      const allUsers = await fetchUsers();
-      const clean = userKey.trim().toLowerCase();
-      
-      const matched = allUsers.find(
-        (u) => 
-          u.uid.toLowerCase() === `local-${clean}` || 
-          u.email.toLowerCase() === clean ||
-          u.email.toLowerCase() === `${clean}@local.app` ||
-          u.name.toLowerCase().includes(clean)
-      ) || DEFAULT_USERS.find(
-        (u) => 
-          u.uid.toLowerCase() === `local-${clean}` || 
-          u.email.toLowerCase() === clean ||
-          u.email.toLowerCase() === `${clean}@local.app` ||
-          u.name.toLowerCase().includes(clean)
-      ) || DEFAULT_USERS[0];
-
-      setDbUser(matched);
-      setUser({ displayName: matched.name, email: matched.email, uid: matched.uid });
-      localStorage.setItem('local_db_user', JSON.stringify(matched));
-    } catch (err) {
-      console.error('Local user switch failed:', err);
-      const fallback = DEFAULT_USERS[0];
-      setDbUser(fallback);
-      setUser({ displayName: fallback.name, email: fallback.email, uid: fallback.uid });
-      localStorage.setItem('local_db_user', JSON.stringify(fallback));
+      const result = await signInWithPopup(auth, googleAuthProvider);
+      if (result.user) {
+        setUser(result.user);
+        const profile = await fetchProfileForUser(result.user);
+        
+        addActivityLog({
+          action: 'USER_LOGIN',
+          actionLabel: 'Connexion Google Réussie',
+          details: `Connexion Google : ${result.user.displayName || result.user.email} (${profile?.role || 'PENDING'})`,
+          actor: {
+            uid: result.user.uid,
+            name: result.user.displayName || result.user.email || 'Utilisateur',
+            email: result.user.email || undefined,
+            role: profile?.role,
+          }
+        });
+      }
+    } catch (error: any) {
+      console.error('Google Sign-In failed:', error);
+      throw new Error(formatAuthError(error), { cause: error });
     }
   };
 
   const signInWithEmail = async (emailOrUsername: string, pass: string) => {
     try {
-      const clean = emailOrUsername.trim().toLowerCase();
-      const username = clean.includes('@') ? clean.split('@')[0] : clean;
-      const cleanPass = pass.trim();
-      
-      const allUsers = await fetchUsers();
-      let matched = allUsers.find(
-        (u) =>
-          u.email.toLowerCase() === clean ||
-          u.uid.toLowerCase() === `local-${username}` ||
-          u.email.toLowerCase() === `${username}@local.app` ||
-          (u.name && u.name.toLowerCase().replace(/[\(\)]/g, '').includes(username))
-      );
+      const email = usernameToEmail(emailOrUsername);
+      const result = await signInWithEmailAndPassword(auth, email, pass);
+      if (result.user) {
+        setUser(result.user);
+        const profile = await fetchProfileForUser(result.user);
 
-      // Fallback search in default users
-      if (!matched) {
-        matched = DEFAULT_USERS.find(
-          (u) =>
-            u.email.toLowerCase() === clean ||
-            u.uid.toLowerCase() === `local-${username}` ||
-            u.email.toLowerCase() === `${username}@local.app` ||
-            (u.name && u.name.toLowerCase().replace(/[\(\)]/g, '').includes(username))
-        );
+        addActivityLog({
+          action: 'USER_LOGIN',
+          actionLabel: 'Connexion Réussie',
+          details: `Utilisateur authentifié : ${profile?.name || email} (${profile?.role || 'PENDING'})`,
+          actor: {
+            uid: result.user.uid,
+            name: profile?.name || email,
+            email: result.user.email || undefined,
+            role: profile?.role,
+          }
+        });
       }
-
-      if (!matched) {
-        throw new Error(
-          `Identifiant "${emailOrUsername}" non reconnu. Comptes valides : HRbata, hrmalabo, parkmalabo, parkbata, oabdellah, admin.`
-        );
-      }
-
-      if (
-        matched.password && 
-        matched.password !== cleanPass && 
-        matched.password.toLowerCase() !== cleanPass.toLowerCase() && 
-        cleanPass !== 'demo'
-      ) {
-        throw new Error(`Mot de passe incorrect pour le compte "${matched.name || emailOrUsername}".`);
-      }
-
-      setDbUser(matched);
-      setUser({ displayName: matched.name, email: matched.email, uid: matched.uid });
-      localStorage.setItem('local_db_user', JSON.stringify(matched));
-
-      addActivityLog({
-        action: 'USER_LOGIN',
-        actionLabel: 'Connexion Utilisateur Réussie',
-        details: `Utilisateur authentifié : ${matched.name} (${matched.role})`,
-        actorUid: matched.uid,
-        actorName: matched.name,
-        actorRole: matched.role,
-      });
-    } catch (error) {
-      console.error('Sign-in failed:', error);
-      addActivityLog({
-        action: 'SECURITY_ALERT',
-        actionLabel: 'Tentative de Connexion Échouée',
-        details: `Échec d'authentification pour l'identifiant : ${emailOrUsername}`,
-      });
-      throw error;
+    } catch (error: any) {
+      console.error('Email sign-in failed:', error);
+      throw new Error(formatAuthError(error), { cause: error });
     }
   };
 
-  const registerNewAccount = async (username: string, fullName: string, role: 'ADMIN' | 'HR Manager', password?: string) => {
-    const clean = username.trim().toLowerCase();
-    const email = clean.includes('@') ? clean : `${clean}@local.app`;
-    const uid = `local-${clean.replace('@local.app', '')}`;
+  const registerWithEmail = async (emailOrUsername: string, pass: string, fullName: string) => {
+    try {
+      const email = usernameToEmail(emailOrUsername);
+      const result = await createUserWithEmailAndPassword(auth, email, pass);
+      if (result.user) {
+        await updateProfile(result.user, { displayName: fullName.trim() });
+        setUser(result.user);
+        const profile = await getOrCreateDbUser(result.user.uid, email, fullName.trim());
+        setDbUser(profile);
+        localStorage.setItem('local_db_user', JSON.stringify(profile));
 
-    const newUser: DbUser = {
-      uid,
-      email,
-      name: fullName.trim() || clean,
-      role,
-      password: password?.trim() || 'user123',
-      createdAt: new Date().toISOString(),
-    };
-
-    await saveUserDoc(newUser);
-    setDbUser(newUser);
-    setUser({ displayName: newUser.name, email: newUser.email, uid: newUser.uid });
-    localStorage.setItem('local_db_user', JSON.stringify(newUser));
-
-    addActivityLog({
-      action: 'ROLE_CHANGED',
-      actionLabel: 'Création de Compte RH',
-      details: `Nouveau compte créé : ${newUser.name} avec le rôle ${newUser.role}`,
-      actorUid: newUser.uid,
-      actorName: newUser.name,
-      actorRole: newUser.role,
-    });
+        addActivityLog({
+          action: 'USER_REGISTERED',
+          actionLabel: 'Nouveau Compte Créé',
+          details: `Inscription : ${fullName} (${email}) - Statut: ${profile.role}`,
+          actor: {
+            uid: result.user.uid,
+            name: fullName,
+            email,
+            role: profile.role,
+          }
+        });
+      }
+    } catch (error: any) {
+      console.error('Registration failed:', error);
+      throw new Error(formatAuthError(error), { cause: error });
+    }
   };
 
   const logout = async () => {
-    const previousUser = dbUser;
     try {
-      localStorage.removeItem('local_db_user');
-      await signOut(auth);
-      setDbUser(null);
-      setUser(null);
-      setIdToken(null);
+      const currentActorName = dbUser?.name || user?.displayName || 'Utilisateur';
+      const currentRole = dbUser?.role;
+      const currentUid = user?.uid;
 
-      if (previousUser) {
+      await signOut(auth);
+      setUser(null);
+      setDbUser(null);
+      setIdToken(null);
+      localStorage.removeItem('local_db_user');
+
+      if (currentUid) {
         addActivityLog({
           action: 'USER_LOGOUT',
           actionLabel: 'Déconnexion Utilisateur',
-          details: `Fin de session sécurisée pour ${previousUser.name} (${previousUser.role})`,
-          actorUid: previousUser.uid,
-          actorName: previousUser.name,
-          actorRole: previousUser.role,
+          details: `Session terminée pour : ${currentActorName}`,
+          actor: {
+            uid: currentUid,
+            name: currentActorName,
+            role: currentRole,
+          }
         });
       }
     } catch (error) {
-      console.error('Sign-out failed:', error);
-      setDbUser(null);
-      setUser(null);
-      setIdToken(null);
+      console.error('Logout error:', error);
     }
   };
 
-  const getToken = async () => {
-    if (auth.currentUser) {
-      const token = await auth.currentUser.getIdToken(true);
-      setIdToken(token);
-      return token;
-    }
-    return null;
-  };
-
-  // Strictly check that user is logged in AND assigned ADMIN role
-  const isAuthenticated = Boolean(user && dbUser);
-  const isAdmin = Boolean(dbUser && dbUser.role === 'ADMIN');
+  const role: UserRole = dbUser?.role || 'PENDING';
+  const isAdmin = role === 'ADMIN';
+  const isStaff = role === 'ADMIN' || role === 'HR Manager';
+  const isPending = role === 'PENDING';
+  const isAuthenticated = Boolean(user);
 
   return (
     <AuthContext.Provider
@@ -285,13 +268,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         idToken,
         loading,
         isAdmin,
+        isStaff,
+        isPending,
         isAuthenticated,
         signInWithGoogle,
         signInWithEmail,
-        registerNewAccount,
-        loginAsLocalUser,
+        registerWithEmail,
         logout,
-        getToken,
+        reloadUserProfile,
       }}
     >
       {children}

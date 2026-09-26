@@ -168,6 +168,25 @@ export interface LeaveRecord {
   createdAt: string;
 }
 
+export type UserRole = 'ADMIN' | 'HR Manager' | 'PENDING';
+
+export interface AuditActor {
+  uid: string;
+  name: string;
+  email?: string;
+  role?: UserRole;
+}
+
+export interface DbUser {
+  uid: string;
+  email: string;
+  name: string;
+  role: UserRole;
+  createdAt: string;
+  approvedAt?: string;
+  approvedBy?: string;
+}
+
 export interface ActivityLog {
   id: string;
   timestamp: string;
@@ -186,6 +205,7 @@ export interface ActivityLog {
     | 'CONFIDENTIAL_DATA_EXPORTED'
     | 'USER_LOGIN'
     | 'USER_LOGOUT'
+    | 'USER_REGISTERED'
     | 'SECURITY_ALERT'
     | 'ROLE_CHANGED';
   actionLabel: string;
@@ -193,10 +213,11 @@ export interface ActivityLog {
   targetId?: string;
   deviceId: string;
   deviceType: string;
+  actor?: AuditActor;
   actorUid?: string;
   actorName?: string;
   actorEmail?: string;
-  actorRole?: string;
+  actorRole?: UserRole | string;
 }
 
 export interface DeviceSession {

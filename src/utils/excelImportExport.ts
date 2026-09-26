@@ -85,7 +85,7 @@ export function normalizeExcelDate(val: any): string {
   }
 
   // If DD/MM/YYYY or DD-MM-YYYY or DD.MM.YYYY
-  const dmyMatch = str.match(/^(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{4})$/);
+  const dmyMatch = str.match(/^(\d{1,2})[/.-](\d{1,2})[/.-](\d{4})$/);
   if (dmyMatch) {
     const day = dmyMatch[1].padStart(2, '0');
     const month = dmyMatch[2].padStart(2, '0');
@@ -94,7 +94,7 @@ export function normalizeExcelDate(val: any): string {
   }
 
   // If YYYY/MM/DD or YYYY.MM.DD
-  const ymdMatch = str.match(/^(\d{4})[\/\-\.](\d{1,2})[\/\-\.](\d{1,2})$/);
+  const ymdMatch = str.match(/^(\d{4})[/.-](\d{1,2})[/.-](\d{1,2})$/);
   if (ymdMatch) {
     const year = ymdMatch[1];
     const month = ymdMatch[2].padStart(2, '0');
@@ -159,6 +159,9 @@ export function normalizeExcelContract(val: any): ContractType {
 
   return 'TYPE_A';
 }
+
+export const normalizeStatus = normalizeExcelStatus;
+export const normalizeContractType = normalizeExcelContract;
 
 /**
  * Normalizes string for fuzzy key lookup (removes accents, punctuation, extra spaces).
