@@ -1,30 +1,82 @@
 import React, { useState } from 'react';
 import { Shield, Lock, KeyRound, LogOut, CheckCircle2, AlertCircle } from 'lucide-react';
+import {
+  EmailAuthProvider,
+  reauthenticateWithCredential,
+  reauthenticateWithPopup,
+} from 'firebase/auth';
 import { useConfidentiality } from '../context/ConfidentialityContext';
 import { useAuth } from '../context/AuthContext';
+import { auth, googleAuthProvider } from '../lib/firebase';
 
 export const PrivacyScreenLock: React.FC = () => {
   const { isScreenLocked, unlockScreen } = useConfidentiality();
   const { user, dbUser, logout } = useAuth();
   const [passwordInput, setPasswordInput] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [checking, setChecking] = useState(false);
+
+  // Google-only accounts have no password to type; they re-verify via the popup.
+  const usesPassword = (auth.currentUser?.providerData ?? []).some(
+    (p) => p.providerId === 'password',
+  );
 
   if (!isScreenLocked) return null;
 
-  const handleUnlockSubmit = (e: React.FormEvent) => {
+  /**
+   * Unlocking re-authenticates against Firebase rather than comparing a password
+   * held in the profile document: the client never sees the real credential, so
+   * there is nothing here to read out of memory or out of Firestore.
+   */
+  const handleUnlockSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
 
-    // If a password is required by the user account, verify it
-    if (dbUser?.password) {
-      if (passwordInput.trim() !== dbUser.password && passwordInput.trim() !== 'demo' && passwordInput.trim() !== 'admin123') {
-        setError('Mot de passe incorrect pour déverrouiller la session.');
-        return;
-      }
+    const current = auth.currentUser;
+    if (!current) {
+      // No session left to unlock into — send them back to the login screen.
+      unlockScreen();
+      await logout();
+      return;
     }
 
-    setPasswordInput('');
-    unlockScreen();
+    const password = passwordInput.trim();
+    if (usesPassword && !password) {
+      setError('Saisissez votre mot de passe pour reprendre la session.');
+      return;
+    }
+
+    setChecking(true);
+    try {
+      if (usesPassword) {
+        const email = current.email;
+        if (!email) throw new Error('no-email');
+        await reauthenticateWithCredential(
+          current,
+          EmailAuthProvider.credential(email, password),
+        );
+      } else {
+        // Google accounts have no password here, so the provider re-verifies them.
+        await reauthenticateWithPopup(current, googleAuthProvider);
+      }
+      setPasswordInput('');
+      unlockScreen();
+    } catch (err) {
+      const code = (err as { code?: string })?.code;
+      if (code === 'auth/too-many-requests') {
+        setError('Trop de tentatives. Patientez quelques minutes avant de réessayer.');
+      } else if (code === 'auth/popup-closed-by-user' || code === 'auth/cancelled-popup-request') {
+        setError('Vérification annulée : la fenêtre Google a été fermée.');
+      } else {
+        setError(
+          usesPassword
+            ? 'Mot de passe incorrect pour déverrouiller la session.'
+            : 'Vérification Google échouée. Réessayez.',
+        );
+      }
+    } finally {
+      setChecking(false);
+    }
   };
 
   return (
@@ -74,23 +126,28 @@ export const PrivacyScreenLock: React.FC = () => {
             </div>
           )}
 
-          {dbUser?.password && (
-            <div className="text-left space-y-1">
-              <label className="block text-2xs font-bold text-stone-600 ml-1">
-                Mot de passe de session
-              </label>
-              <div className="relative">
-                <KeyRound className="w-4 h-4 text-stone-400 absolute left-3.5 top-3" />
-                <input
-                  type="password"
-                  autoFocus
-                  value={passwordInput}
-                  onChange={(e) => setPasswordInput(e.target.value)}
-                  placeholder="Saisissez votre mot de passe pour reprendre..."
-                  className="w-full pl-10 pr-4 py-2.5 bg-stone-50 border border-stone-200 rounded-xl text-xs text-stone-900 focus:outline-none focus:ring-2 focus:ring-amber-500 font-medium placeholder:text-stone-400"
-                />
-              </div>
+          {usesPassword ? (
+          <div className="text-left space-y-1">
+            <label className="block text-2xs font-bold text-stone-600 ml-1">
+              Mot de passe de session
+            </label>
+            <div className="relative">
+              <KeyRound className="w-4 h-4 text-stone-400 absolute left-3.5 top-3" />
+              <input
+                type="password"
+                autoFocus
+                value={passwordInput}
+                onChange={(e) => setPasswordInput(e.target.value)}
+                placeholder="Saisissez votre mot de passe pour reprendre..."
+                className="w-full pl-10 pr-4 py-2.5 bg-stone-50 border border-stone-200 rounded-xl text-xs text-stone-900 focus:outline-none focus:ring-2 focus:ring-amber-500 font-medium placeholder:text-stone-400"
+              />
             </div>
+          </div>
+          ) : (
+            <p className="text-2xs text-stone-500 text-left leading-relaxed">
+              Votre compte utilise la connexion Google : cliquez sur « Déverrouiller »
+              pour confirmer votre identité auprès de Google.
+            </p>
           )}
 
           <div className="flex items-center gap-3 pt-2">
@@ -108,10 +165,11 @@ export const PrivacyScreenLock: React.FC = () => {
 
             <button
               type="submit"
-              className="flex-1 py-2.5 px-4 rounded-xl bg-stone-900 hover:bg-stone-800 text-white text-xs font-bold transition-all shadow-xs cursor-pointer active:scale-98 flex items-center justify-center gap-2"
+              disabled={checking}
+              className="flex-1 py-2.5 px-4 rounded-xl bg-stone-900 hover:bg-stone-800 disabled:opacity-60 disabled:cursor-not-allowed text-white text-xs font-bold transition-all shadow-xs cursor-pointer active:scale-98 flex items-center justify-center gap-2"
             >
               <CheckCircle2 className="w-4 h-4 text-amber-400" />
-              <span>Déverrouiller</span>
+              <span>{checking ? 'Vérification...' : 'Déverrouiller'}</span>
             </button>
           </div>
         </form>

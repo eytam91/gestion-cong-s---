@@ -16,7 +16,8 @@ import {
   Lock,
   Eye,
   EyeOff,
-  Shield
+  Shield,
+  Clock
 } from 'lucide-react';
 import { Employee, LeaveRecord } from './types';
 import { DashboardOverview } from './components/DashboardOverview';
@@ -44,8 +45,37 @@ import {
   clearAllFirestoreData 
 } from './services/firestoreService';
 
+/** Full-screen state shown instead of the app when the viewer has no access. */
+const AccessGate: React.FC<{
+  icon: React.ReactNode;
+  title: string;
+  message: string;
+  action?: React.ReactNode;
+}> = ({ icon, title, message, action }) => (
+  <div className="min-h-screen bg-stone-100/70 flex flex-col items-center justify-center p-6 text-center">
+    <div className="bg-white rounded-3xl border border-stone-200 shadow-xs p-10 max-w-md w-full space-y-4">
+      <div className="w-14 h-14 rounded-2xl bg-stone-900 text-white flex items-center justify-center mx-auto">
+        {icon}
+      </div>
+      <h1 className="text-lg font-bold text-stone-900">{title}</h1>
+      <p className="text-xs text-stone-500 leading-relaxed">{message}</p>
+      {action}
+    </div>
+  </div>
+);
+
 export default function App() {
-  const { user, dbUser, logout, isAdmin } = useAuth();
+  const {
+    user,
+    dbUser,
+    logout,
+    isAdmin,
+    isStaff,
+    isPending,
+    profileError,
+    refreshProfile,
+    loading: authLoading,
+  } = useAuth();
   const { isConfidentialMode, toggleConfidentialMode, lockScreenNow } = useConfidentiality();
   const [activeTab, setActiveTab] = useState<'dashboard' | 'employees' | 'ledger' | 'audit' | 'users'>('dashboard');
   
@@ -91,9 +121,16 @@ export default function App() {
     }
   };
 
+  // Only staff may read the HR collections, so loading earlier would just
+  // produce permission errors.
   useEffect(() => {
-    loadData();
-  }, []);
+    if (isStaff) {
+      loadData();
+    } else {
+      setIsLoading(false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isStaff]);
 
   const handleResetDemoData = async () => {
     if (!isAdmin) {
@@ -276,6 +313,94 @@ export default function App() {
     setSelectedEmployeeIdForView(empId);
     setActiveTab('employees');
   };
+
+  const signOutButton = (
+    <button
+      onClick={logout}
+      className="inline-flex items-center gap-1.5 text-stone-600 hover:text-stone-900 text-xs font-bold px-4 py-2.5 rounded-xl hover:bg-stone-100 transition-all cursor-pointer"
+    >
+      <LogOut className="w-4 h-4" />
+      Se déconnecter
+    </button>
+  );
+
+  if (authLoading) {
+    return (
+      <AccessGate
+        icon={<RefreshCw className="w-6 h-6 animate-spin text-amber-400" />}
+        title="Chargement"
+        message="Vérification de votre session en cours..."
+      />
+    );
+  }
+
+  // The dossier holds names, addresses and ID numbers, so nothing renders before
+  // sign-in. firestore.rules enforces the same boundary server-side.
+  if (!user) {
+    return (
+      <>
+        <AccessGate
+          icon={<Building2 className="w-6 h-6 text-amber-400" />}
+          title="Gestion des Congés & RH"
+          message="Cette application contient des données RH confidentielles. Veuillez vous connecter pour continuer."
+          action={
+            <button
+              onClick={() => setShowAuthModal(true)}
+              className="inline-flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold px-4 py-2.5 rounded-xl transition-all cursor-pointer"
+            >
+              <LogIn className="w-4 h-4" />
+              Connexion
+            </button>
+          }
+        />
+        {showAuthModal && <AuthModal onClose={() => setShowAuthModal(false)} />}
+      </>
+    );
+  }
+
+  if (profileError) {
+    return (
+      <AccessGate
+        icon={<ShieldCheck className="w-6 h-6 text-amber-400" />}
+        title="Profil indisponible"
+        message="Votre profil n'a pas pu être chargé depuis Cloud Firestore. Vos droits d'accès sont donc inconnus. Vérifiez votre connexion puis réessayez."
+        action={
+          <div className="flex items-center justify-center gap-2">
+            <button
+              onClick={() => void refreshProfile()}
+              className="inline-flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold px-4 py-2.5 rounded-xl transition-all cursor-pointer"
+            >
+              <RefreshCw className="w-4 h-4" />
+              Réessayer
+            </button>
+            {signOutButton}
+          </div>
+        }
+      />
+    );
+  }
+
+  if (isPending) {
+    return (
+      <AccessGate
+        icon={<Clock className="w-6 h-6 text-amber-400" />}
+        title="Compte en attente de validation"
+        message="Votre compte a bien été créé. Un administrateur doit vous attribuer un rôle avant que vous puissiez accéder aux données RH."
+        action={signOutButton}
+      />
+    );
+  }
+
+  if (!isStaff) {
+    return (
+      <AccessGate
+        icon={<ShieldCheck className="w-6 h-6 text-amber-400" />}
+        title="Accès non autorisé"
+        message="Votre compte n'a pas les droits nécessaires pour consulter les données RH. Contactez un administrateur."
+        action={signOutButton}
+      />
+    );
+  }
 
   return (
     <div className="min-h-screen bg-stone-100/70 text-stone-800 flex flex-col justify-between font-sans selection:bg-amber-100 selection:text-amber-900">

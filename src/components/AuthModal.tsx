@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Lock, LogIn, X, AlertCircle, Shield, User } from 'lucide-react';
+import { Lock, LogIn, X, AlertCircle, Shield, User, UserPlus } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
 interface AuthModalProps {
@@ -7,12 +7,19 @@ interface AuthModalProps {
 }
 
 export const AuthModal: React.FC<AuthModalProps> = ({ onClose }) => {
-  const { signInWithEmail } = useAuth();
-  
+  const { signInWithEmail, registerNewAccount } = useAuth();
+
+  const [isRegister, setIsRegister] = useState(false);
   const [username, setUsername] = useState('');
+  const [fullName, setFullName] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+
+  const canSubmit =
+    username.trim().length >= 3 &&
+    password.length >= 6 &&
+    (!isRegister || fullName.trim().length >= 2);
 
   const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -20,11 +27,14 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onClose }) => {
     setIsLoading(true);
 
     try {
-      await signInWithEmail(username, password);
+      if (isRegister) {
+        await registerNewAccount(username, fullName, password);
+      } else {
+        await signInWithEmail(username, password);
+      }
       onClose();
-    } catch (err: any) {
-      console.error(err);
-      setError(err.message || "Une erreur est survenue lors de la connexion.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Une erreur est survenue.');
     } finally {
       setIsLoading(false);
     }
@@ -44,10 +54,12 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onClose }) => {
             </div>
             <div>
               <h2 className="text-base font-bold text-stone-900">
-                Espace Connexion RH & Admin
+                {isRegister ? 'Créer un compte' : 'Espace Connexion RH & Admin'}
               </h2>
               <p className="text-xs text-stone-500 mt-0.5">
-                Veuillez saisir votre identifiant et mot de passe
+                {isRegister
+                  ? "Votre accès devra être validé par un administrateur"
+                  : 'Veuillez saisir votre identifiant et mot de passe'}
               </p>
             </div>
           </div>
@@ -70,6 +82,25 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onClose }) => {
           )}
 
           <form onSubmit={handleLoginSubmit} className="space-y-4">
+            {isRegister && (
+              <div>
+                <label className="block text-xs font-bold text-stone-700 mb-1.5 ml-1">
+                  Nom complet
+                </label>
+                <div className="relative">
+                  <User className="w-4 h-4 text-stone-400 absolute left-3.5 top-3" />
+                  <input
+                    type="text"
+                    required
+                    value={fullName}
+                    onChange={(e) => setFullName(e.target.value)}
+                    className="w-full pl-10 pr-4 py-2.5 bg-stone-50 border border-stone-200 rounded-xl text-xs text-stone-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 font-medium placeholder:text-stone-400"
+                    placeholder="Ex: Jean Dupont"
+                  />
+                </div>
+              </div>
+            )}
+
             {/* Identifiant */}
             <div>
               <label className="block text-xs font-bold text-stone-700 mb-1.5 ml-1">
@@ -84,7 +115,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onClose }) => {
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
                   className="w-full pl-10 pr-4 py-2.5 bg-stone-50 border border-stone-200 rounded-xl text-xs text-stone-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 font-medium placeholder:text-stone-400"
-                  placeholder="Ex: HRbata, hrmalabo, parkmalabo, parkbata, oabdellah, admin"
+                  autoComplete="username"
+                  placeholder="Votre identifiant ou adresse e-mail"
                 />
               </div>
             </div>
@@ -99,6 +131,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onClose }) => {
                 <input
                   type="password"
                   required
+                  minLength={6}
+                  autoComplete={isRegister ? 'new-password' : 'current-password'}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   className="w-full pl-10 pr-4 py-2.5 bg-stone-50 border border-stone-200 rounded-xl text-xs text-stone-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 placeholder:text-stone-400"
@@ -110,19 +144,34 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onClose }) => {
             {/* Submit Button */}
             <button
               type="submit"
-              disabled={isLoading || !username.trim() || !password.trim()}
+              disabled={isLoading || !canSubmit}
               className="w-full py-3 bg-indigo-600 hover:bg-indigo-700 disabled:bg-stone-200 disabled:text-stone-400 text-white font-bold rounded-xl text-xs transition-all flex items-center justify-center gap-2 mt-2 shadow-xs cursor-pointer disabled:cursor-not-allowed active:scale-98"
             >
               {isLoading ? (
                 <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
               ) : (
                 <>
-                  <LogIn className="w-4 h-4" />
-                  <span>Se Connecter</span>
+                  {isRegister ? <UserPlus className="w-4 h-4" /> : <LogIn className="w-4 h-4" />}
+                  <span>{isRegister ? 'Créer mon compte' : 'Se Connecter'}</span>
                 </>
               )}
             </button>
           </form>
+
+          <p className="text-xs text-stone-500 text-center">
+            {isRegister ? 'Vous avez déjà un compte ?' : 'Pas encore de compte ?'}{' '}
+            <button
+              type="button"
+              onClick={() => {
+                setIsRegister(!isRegister);
+                setError(null);
+                setPassword('');
+              }}
+              className="font-bold text-indigo-600 hover:text-indigo-700 cursor-pointer"
+            >
+              {isRegister ? 'Se connecter' : 'Créer un compte'}
+            </button>
+          </p>
         </div>
       </div>
     </div>

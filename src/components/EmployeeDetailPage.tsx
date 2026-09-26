@@ -34,7 +34,7 @@ import {
   DollarSign,
   Edit3
 } from 'lucide-react';
-import { Employee, EmployeeDocument, DocumentCategory, LeaveRecord } from '../types';
+import { Employee, EmployeeDocument, DocumentCategory, LeaveRecord, EmploymentStatusType, HRComplianceState } from '../types';
 import { calculateEmployeeStats, LEAVE_TYPE_LABELS } from '../utils/vacationCalc';
 import { EmployeeEditModal, EditModalTab } from './EmployeeEditModal';
 import { EmployeeNotesArea } from './EmployeeNotesArea';
@@ -1599,7 +1599,7 @@ export const EmployeeDetailPage: React.FC<EmployeeDetailPageProps> = ({
                 <label className="block text-2xs font-bold text-stone-700 uppercase mb-1">Statut d'Emploi</label>
                 <select
                   value={statusForm.employmentStatus}
-                  onChange={(e) => setStatusForm({ ...statusForm, employmentStatus: e.target.value })}
+                  onChange={(e) => setStatusForm({ ...statusForm, employmentStatus: e.target.value as EmploymentStatusType })}
                   className="w-full px-3 py-2 rounded-xl border border-stone-200 text-xs bg-stone-50"
                 >
                   <option value="ACTIF">ACTIF (En poste)</option>
@@ -1612,7 +1612,7 @@ export const EmployeeDetailPage: React.FC<EmployeeDetailPageProps> = ({
                 <label className="block text-2xs font-bold text-stone-700 uppercase mb-1">Statut de Conformité</label>
                 <select
                   value={statusForm.overallState}
-                  onChange={(e) => setStatusForm({ ...statusForm, overallState: e.target.value })}
+                  onChange={(e) => setStatusForm({ ...statusForm, overallState: e.target.value as HRComplianceState })}
                   className="w-full px-3 py-2 rounded-xl border border-stone-200 text-xs bg-stone-50"
                 >
                   <option value="EN_REGLE">EN RÈGLE (Dossier conforme)</option>

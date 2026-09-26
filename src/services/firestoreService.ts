@@ -16,41 +16,26 @@ const EMPLOYEES_COLL = 'employees';
 const LEAVE_RECORDS_COLL = 'leave_records';
 const USERS_COLL = 'users';
 
+/** PENDING accounts have registered but not yet been granted access by an admin. */
+export type UserRole = 'ADMIN' | 'HR Manager' | 'PENDING';
+
 export interface DbUser {
   uid: string;
   email: string;
   name: string;
-  role: 'ADMIN' | 'HR Manager';
-  password?: string;
+  role: UserRole;
   createdAt: string;
 }
 
-export const DEFAULT_USERS: DbUser[] = [
-  { uid: 'local-admin', email: 'admin@local.app', name: 'Administrateur (admin)', role: 'ADMIN', password: 'admin123', createdAt: '2026-01-01T00:00:00.000Z' },
-  { uid: 'local-hrbata', email: 'hrbata@local.app', name: 'RH Bata (HRbata)', role: 'HR Manager', password: 'hrbata123', createdAt: '2026-01-01T00:00:00.000Z' },
-  { uid: 'local-hrmalabo', email: 'hrmalabo@local.app', name: 'RH Malabo (hrmalabo)', role: 'HR Manager', password: 'hrmalabo123', createdAt: '2026-01-01T00:00:00.000Z' },
-  { uid: 'local-parkmalabo', email: 'parkmalabo@local.app', name: 'Parc Malabo (parkmalabo)', role: 'HR Manager', password: 'parkmalabo123', createdAt: '2026-01-01T00:00:00.000Z' },
-  { uid: 'local-parkbata', email: 'parkbata@local.app', name: 'Parc Bata (parkbata)', role: 'HR Manager', password: 'parkbata123', createdAt: '2026-01-01T00:00:00.000Z' },
-  { uid: 'local-oabdellah', email: 'oabdellah@local.app', name: 'O. Abdellah (oabdellah)', role: 'HR Manager', password: 'oabdellah123', createdAt: '2026-01-01T00:00:00.000Z' },
-];
-
 /**
- * Ensures initial collections and auth users exist in Firestore, keeping employee database clean.
+ * Loads the HR data for a signed-in staff member, seeding the employee roster on
+ * first run if the collection is empty.
+ *
+ * User accounts are no longer seeded here: they are real Firebase Auth accounts,
+ * and their roles are granted by an admin rather than shipped in the bundle.
  */
 export async function initializeFirestoreData(): Promise<{ employees: Employee[]; leaveRecords: LeaveRecord[] }> {
   try {
-    // Seed default authentication users if missing
-    const userSnap = await getDocs(collection(db, USERS_COLL));
-    if (userSnap.empty) {
-      console.log('Seeding default auth user accounts in Firestore...');
-      const batch = writeBatch(db);
-      for (const u of DEFAULT_USERS) {
-        const userRef = doc(db, USERS_COLL, u.uid);
-        batch.set(userRef, u);
-      }
-      await batch.commit().catch((e) => console.warn('User seeding failed:', e));
-    }
-
     const empSnap = await getDocs(collection(db, EMPLOYEES_COLL));
     let employees: Employee[] = [];
     empSnap.forEach((d) => {
@@ -195,49 +180,10 @@ export async function deleteLeaveRecordDoc(recordId: string): Promise<void> {
 // ----------------- USERS -----------------
 
 export async function fetchUsers(): Promise<DbUser[]> {
-  try {
-    const snap = await getDocs(collection(db, USERS_COLL));
-    const list: DbUser[] = [];
-    snap.forEach((d) => list.push(d.data() as DbUser));
-    
-    // Merge any missing default users so that all configured accounts are always available
-    const mergedList = [...list];
-    const batch = writeBatch(db);
-    let hasNewSeeds = false;
-
-    for (const def of DEFAULT_USERS) {
-      const exists = mergedList.some(
-        (u) => 
-          u.uid === def.uid || 
-          u.email.toLowerCase() === def.email.toLowerCase() ||
-          u.name.toLowerCase().includes(def.uid.replace('local-', '').toLowerCase())
-      );
-      if (!exists) {
-        mergedList.push(def);
-        batch.set(doc(db, USERS_COLL, def.uid), def);
-        hasNewSeeds = true;
-      }
-    }
-
-    if (hasNewSeeds) {
-      await batch.commit().catch((e) => console.warn('Seeding default users failed:', e));
-    }
-
-    return mergedList;
-  } catch (err) {
-    console.warn('Failed to fetch remote users, returning default users:', err);
-    return DEFAULT_USERS;
-  }
-}
-
-export async function saveUserDoc(user: DbUser): Promise<DbUser> {
-  try {
-    const userRef = doc(db, USERS_COLL, user.uid);
-    await setDoc(userRef, user, { merge: true });
-  } catch (err) {
-    console.warn('Failed to persist user in Firestore:', err);
-  }
-  return user;
+  const snap = await getDocs(collection(db, USERS_COLL));
+  return snap.docs
+    .map((d) => d.data() as DbUser)
+    .sort((a, b) => (a.name || '').localeCompare(b.name || ''));
 }
 
 export async function deleteUserDoc(uid: string): Promise<void> {
@@ -245,39 +191,36 @@ export async function deleteUserDoc(uid: string): Promise<void> {
   await deleteDoc(userRef);
 }
 
-export async function getOrCreateDbUser(uid: string, email: string, name?: string): Promise<DbUser> {
-  try {
-    const userRef = doc(db, USERS_COLL, uid);
-    const userSnap = await getDoc(userRef);
+export async function getUserProfile(uid: string): Promise<DbUser | null> {
+  const snap = await getDoc(doc(db, USERS_COLL, uid));
+  return snap.exists() ? (snap.data() as DbUser) : null;
+}
 
-    if (userSnap.exists()) {
-      return userSnap.data() as DbUser;
-    }
+/**
+ * Creates the profile for a freshly registered account.
+ *
+ * The role is fixed to PENDING here and in firestore.rules. It is deliberately
+ * not derived from the email address: a rule like "contains 'admin'" would let
+ * anyone grant themselves admin just by choosing their username.
+ */
+export async function createUserProfile(
+  uid: string,
+  email: string,
+  name: string,
+): Promise<DbUser> {
+  const profile: DbUser = {
+    uid,
+    email,
+    name: name || email.split('@')[0],
+    role: 'PENDING',
+    createdAt: new Date().toISOString(),
+  };
+  await setDoc(doc(db, USERS_COLL, uid), profile);
+  return profile;
+}
 
-    const role = (email && (email.toLowerCase().includes('admin') || email.toLowerCase().includes('itseytam')))
-      ? 'ADMIN'
-      : 'HR Manager';
-
-    const newUser: DbUser = {
-      uid,
-      email: email || `${uid}@local.app`,
-      name: name || (email ? email.split('@')[0] : 'Utilisateur'),
-      role,
-      createdAt: new Date().toISOString(),
-    };
-
-    await setDoc(userRef, newUser);
-    return newUser;
-  } catch (err) {
-    console.warn('Error in getOrCreateDbUser:', err);
-    return {
-      uid,
-      email: email || 'user@local.app',
-      name: name || 'Utilisateur',
-      role: 'ADMIN',
-      createdAt: new Date().toISOString(),
-    };
-  }
+export async function setUserRole(uid: string, role: UserRole): Promise<void> {
+  await setDoc(doc(db, USERS_COLL, uid), { role }, { merge: true });
 }
 
 // ----------------- RESET & CLEAR -----------------
@@ -291,9 +234,6 @@ export async function resetDemoDataToFirestore(): Promise<void> {
   const batch = writeBatch(db);
   for (const rec of SAMPLE_DEMO_LEAVE_RECORDS) {
     batch.set(doc(db, LEAVE_RECORDS_COLL, rec.id), rec);
-  }
-  for (const u of DEFAULT_USERS) {
-    batch.set(doc(db, USERS_COLL, u.uid), u);
   }
   await batch.commit();
 }

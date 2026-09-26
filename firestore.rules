@@ -1,64 +1,97 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    
-    // Validate Document IDs to prevent injection and oversized keys
-    function isValidId(id) {
-      return id is string && id.size() > 0 && id.size() <= 128;
+
+    // Anything not matched below is denied by default.
+    //
+    // These rules are the only real boundary around the HR data: the Firebase
+    // web API key ships in the client bundle, so UI-side checks (role flags,
+    // confidentiality masking, the screen lock) can all be bypassed by talking
+    // to Firestore directly. Every rule here therefore starts from request.auth.
+
+    function isSignedIn() {
+      return request.auth != null;
     }
 
-    // Default Deny All Documents
-    match /{document=**} {
-      allow read, write: if false;
+    function profilePath() {
+      return /databases/$(database)/documents/users/$(request.auth.uid);
     }
-    
-    // ----------------------------------------------------
-    // Audit Logs Collection: Tamper-Proof & Append-Only
-    // Immutable security log: updates and deletions are strictly forbidden!
-    // ----------------------------------------------------
-    match /audit_logs/{logId} {
-      allow read: if true;
-      allow create: if isValidId(logId) 
-        && request.resource.data.id is string
-        && request.resource.data.timestamp is string
-        && request.resource.data.action is string;
-      allow update, delete: if false; // STRICT IMMUTABILITY
+
+    // '' when the signed-in account has no profile document yet, so an
+    // authenticated stranger gets no privileges until an admin provisions them.
+    function role() {
+      return isSignedIn() && exists(profilePath())
+        ? get(profilePath()).data.role
+        : '';
     }
-    
-    // ----------------------------------------------------
-    // Users Collection (HR Personnel & Admins)
-    // ----------------------------------------------------
+
+    function isAdmin() {
+      return role() == 'ADMIN';
+    }
+
+    function isStaff() {
+      return role() == 'ADMIN' || role() == 'HR Manager';
+    }
+
+    function isValidRole(r) {
+      return r == 'ADMIN' || r == 'HR Manager' || r == 'PENDING';
+    }
+
+    // User profiles hold the role claim, so role changes are the sensitive part.
     match /users/{userId} {
-      allow read: if true;
-      allow create, update: if isValidId(userId)
-        && request.resource.data.email is string
-        && request.resource.data.role in ['ADMIN', 'HR Manager'];
-      allow delete: if isValidId(userId);
+      // A pending account must be able to read its own profile to learn it is pending.
+      allow read: if isStaff() || (isSignedIn() && request.auth.uid == userId);
+
+      // Signing up grants no access: a new account lands as PENDING and an admin
+      // promotes it. Otherwise anyone who can register could read the HR database.
+      allow create: if isAdmin()
+                       ? isValidRole(request.resource.data.role)
+                       : (isSignedIn()
+                          && request.auth.uid == userId
+                          && request.resource.data.uid == userId
+                          && request.resource.data.role == 'PENDING');
+
+      // Only an admin may change a role; a user editing their own profile must
+      // leave role and uid exactly as they were.
+      allow update: if isAdmin()
+                       ? isValidRole(request.resource.data.role)
+                       : (isSignedIn()
+                          && request.auth.uid == userId
+                          && request.resource.data.role == resource.data.role
+                          && request.resource.data.uid == resource.data.uid);
+
+      // Admins cannot delete themselves — that could leave the tenant with no admin.
+      allow delete: if isAdmin() && request.auth.uid != userId;
     }
-    
-    // ----------------------------------------------------
-    // Employees Master Collection
-    // ----------------------------------------------------
+
     match /employees/{employeeId} {
-      allow read: if true;
-      allow create, update: if isValidId(employeeId)
+      allow read: if isStaff();
+      allow create, update: if isStaff()
         && request.resource.data.id is string
         && request.resource.data.name is string
         && request.resource.data.name.size() >= 2
         && request.resource.data.name.size() <= 200;
-      allow delete: if isValidId(employeeId);
+      allow delete: if isAdmin();
     }
-    
-    // ----------------------------------------------------
-    // Leave Records Collection
-    // ----------------------------------------------------
+
     match /leave_records/{leaveId} {
-      allow read: if true;
-      allow create, update: if isValidId(leaveId)
+      allow read: if isStaff();
+      // Staff correct their own mistakes, so deletion is not admin-only here.
+      allow create, update: if isStaff()
         && request.resource.data.id is string
         && request.resource.data.employeeId is string
         && request.resource.data.daysCount is number;
-      allow delete: if isValidId(leaveId);
+      allow delete: if isStaff();
+    }
+
+    // Append-only: an audit trail its own subjects can edit is not an audit trail.
+    match /audit_logs/{logId} {
+      allow read: if isStaff();
+      allow create: if isStaff()
+        && request.resource.data.timestamp is string
+        && request.resource.data.action is string
+        && request.resource.data.actorUid == request.auth.uid;
+      allow update, delete: if false;
     }
   }
 }

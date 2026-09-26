@@ -1,6 +1,6 @@
 import { ActivityLog, DeviceSession } from '../types';
 import { doc, setDoc, getDocs, collection } from 'firebase/firestore';
-import { db } from '../lib/firebase';
+import { auth, db } from '../lib/firebase';
 
 const DEVICE_ID_KEY = 'app_device_id_v1';
 const DEVICE_SESSIONS_KEY = 'app_device_sessions_v1';
@@ -117,25 +117,15 @@ export function addActivityLog(logData: {
   actorRole?: string;
 }): ActivityLog {
   const info = getDeviceDetails();
-  
-  // Read current active user context if available
-  let actorUid = logData.actorUid;
-  let actorName = logData.actorName;
-  let actorRole = logData.actorRole;
 
-  if (!actorName || !actorRole) {
-    try {
-      const savedUser = localStorage.getItem('local_db_user');
-      if (savedUser) {
-        const u = JSON.parse(savedUser);
-        actorUid = actorUid || u.uid;
-        actorName = actorName || u.name || u.email;
-        actorRole = actorRole || u.role;
-      }
-    } catch (e) {
-      // ignore
-    }
-  }
+  // The acting identity comes from Firebase Auth, not from browser storage: a
+  // storage-derived actor can be edited by the person being audited, and
+  // firestore.rules requires actorUid to equal the caller's own uid.
+  const signedIn = auth.currentUser;
+  const actorUid = logData.actorUid || signedIn?.uid;
+  const actorName =
+    logData.actorName || signedIn?.displayName || signedIn?.email || 'Utilisateur RH';
+  const actorRole = logData.actorRole || 'Collaborateur';
 
   const newLog: ActivityLog = {
     id: 'log-' + Date.now() + '-' + Math.random().toString(36).substring(2, 6),
@@ -146,23 +136,26 @@ export function addActivityLog(logData: {
     targetId: logData.targetId,
     deviceId: info.deviceId,
     deviceType: info.deviceType,
-    actorUid: actorUid || 'system',
-    actorName: actorName || 'Utilisateur RH',
-    actorRole: actorRole || 'Collaborateur',
+    actorUid: actorUid || '',
+    actorName,
+    actorRole,
   };
 
   const currentLogs = getActivityLogs();
   const updated = [newLog, ...currentLogs].slice(0, 500); // keep max 500 logs
   localStorage.setItem(ACTIVITY_LOGS_KEY, JSON.stringify(updated));
 
-  // Asynchronously persist to Cloud Firestore
-  try {
-    const logRef = doc(db, AUDIT_LOGS_COLL, newLog.id);
-    setDoc(logRef, newLog).catch((err) => {
-      console.warn('Asynchronous Cloud Firestore audit logging failed:', err);
-    });
-  } catch (err) {
-    console.warn('Could not dispatch Firestore audit log:', err);
+  // Mirror to Cloud Firestore. Only a signed-in staff member may write to the
+  // shared trail, so skip the round-trip when there is nobody to attribute it to.
+  if (newLog.actorUid) {
+    try {
+      const logRef = doc(db, AUDIT_LOGS_COLL, newLog.id);
+      setDoc(logRef, newLog).catch((err) => {
+        console.warn('Asynchronous Cloud Firestore audit logging failed:', err);
+      });
+    } catch (err) {
+      console.warn('Could not dispatch Firestore audit log:', err);
+    }
   }
 
   return newLog;
